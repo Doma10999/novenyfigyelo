@@ -1,213 +1,142 @@
-import express from "express";
-import cors from "cors";
-import dotenv from "dotenv";
-import webPush from "web-push";
-import pkg from "pg";
+const express = require("express");
+const cors = require("cors");
+const webpush = require("web-push");
+const { Pool } = require("pg");
 
-dotenv.config();
+const app = express();
+app.use(cors());
+app.use(express.json());
 
-const { Pool } = pkg;
-
-// ---- ENV VÁLTOZÓK ----
+// --- Environment variables ---
 const PORT = process.env.PORT || 3000;
 const DATABASE_URL = process.env.DATABASE_URL;
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY;
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
 
 if (!DATABASE_URL) {
-  console.error("Hiányzik a DATABASE_URL env változó!");
-  process.exit(1);
+  console.error("❌ DATABASE_URL is not set.");
 }
 if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
-  console.error("Hiányzik a VAPID_PUBLIC_KEY vagy VAPID_PRIVATE_KEY env változó!");
-  process.exit(1);
+  console.error("❌ VAPID keys are not set.");
 }
 
-// Web Push (VAPID) beállítás
-webPush.setVapidDetails(
-  "mailto:example@example.com", // ide tehetsz saját emailt is
+// --- PostgreSQL pool ---
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
+
+// Ensure table exists
+const ensureTable = async () => {
+  const query = `
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id SERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      subscription JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `;
+  await pool.query(query);
+  console.log("✅ push_subscriptions table ready");
+};
+
+ensureTable().catch(err => {
+  console.error("❌ Error creating table:", err);
+});
+
+// --- Web Push config ---
+webpush.setVapidDetails(
+  "mailto:example@example.com",
   VAPID_PUBLIC_KEY,
   VAPID_PRIVATE_KEY
 );
 
-// PostgreSQL pool
-const pool = new Pool({
-  connectionString: DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false,
-  },
+// Simple healthcheck
+app.get("/", (req, res) => {
+  res.json({ ok: true, message: "Novenyfigyelo backend is running." });
 });
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+// Save / update subscription for a user
+// Expected body: { userId: "user123", subscription: {...} }
+app.post("/subscribe", async (req, res) => {
+  const { userId, subscription } = req.body;
 
-// ---- SEGÉD: adatbázis inicializálás ----
-async function initDb() {
-  // subscriptions tábla: melyik user / device kér értesítést
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS subscriptions (
-      id SERIAL PRIMARY KEY,
-      user_id TEXT,
-      device_id TEXT,
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      endpoint TEXT NOT NULL UNIQUE,
-      p256dh TEXT NOT NULL,
-      auth TEXT NOT NULL
-    );
-  `);
+  if (!userId || !subscription) {
+    return res.status(400).json({ error: "Missing userId or subscription" });
+  }
 
-  // measurements tábla: az ESP által küldött adatok
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS measurements (
-      id SERIAL PRIMARY KEY,
-      device_id TEXT NOT NULL,
-      moisture NUMERIC NOT NULL,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    );
-  `);
-
-  console.log("Adatbázis táblák ellenőrizve / létrehozva.");
-}
-
-// ---- API: Subscribe (harang ikon) ----
-app.post("/api/subscribe", async (req, res) => {
   try {
-    const { userId, deviceId, subscription } = req.body;
-
-    if (!subscription || !subscription.endpoint || !subscription.keys) {
-      return res.status(400).json({ error: "Hiányos subscription adatok." });
-    }
-
-    const endpoint = subscription.endpoint;
-    const p256dh = subscription.keys.p256dh;
-    const auth = subscription.keys.auth;
-
+    // We simply insert; duplicates are fine, user can have multiple devices
     await pool.query(
-      `
-      INSERT INTO subscriptions (user_id, device_id, endpoint, p256dh, auth)
-      VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT (endpoint) DO UPDATE
-      SET user_id = EXCLUDED.user_id,
-          device_id = EXCLUDED.device_id,
-          p256dh = EXCLUDED.p256dh,
-          auth = EXCLUDED.auth;
-      `,
-      [userId || null, deviceId || null, endpoint, p256dh, auth]
+      "INSERT INTO push_subscriptions (user_id, subscription) VALUES ($1, $2)",
+      [userId, subscription]
     );
 
-    return res.json({ success: true });
+    return res.status(201).json({ message: "Subscription saved" });
   } catch (err) {
-    console.error("Hiba /api/subscribe:", err);
-    return res.status(500).json({ error: "Szerver hiba /api/subscribe" });
+    console.error("❌ Error saving subscription:", err);
+    return res.status(500).json({ error: "Database error" });
   }
 });
 
-// ---- API: Measurement az ESP-től ----
-app.post("/api/measurement", async (req, res) => {
+// Endpoint for ESP32 / backend logic to trigger low-moisture notifications
+// Expected body: { userId: "user123", moisture: 30, threshold: 35, plantName?: "Fikusz" }
+app.post("/notify-low-moisture", async (req, res) => {
+  const { userId, moisture, threshold = 35, plantName } = req.body;
+
+  if (!userId || typeof moisture !== "number") {
+    return res.status(400).json({ error: "Missing userId or moisture" });
+  }
+
+  if (moisture >= threshold) {
+    return res.json({ message: "Moisture is above threshold, no notification sent." });
+  }
+
   try {
-    const { deviceId, moisture } = req.body;
-
-    if (!deviceId || typeof moisture === "undefined") {
-      return res.status(400).json({ error: "Hiányzik deviceId vagy moisture." });
-    }
-
-    const moistureNum = Number(moisture);
-
-    // Mentés az adatbázisba
-    await pool.query(
-      `
-      INSERT INTO measurements (device_id, moisture)
-      VALUES ($1, $2);
-      `,
-      [deviceId, moistureNum]
+    const result = await pool.query(
+      "SELECT subscription FROM push_subscriptions WHERE user_id = $1",
+      [userId]
     );
 
-    // Ha 35% alatt van, küldünk push-t azoknak, akik erre az eszközre feliratkoztak
-    if (moistureNum <= 35) {
-      const { rows: subs } = await pool.query(
-        `
-        SELECT endpoint, p256dh, auth
-        FROM subscriptions
-        WHERE device_id = $1;
-        `,
-        [deviceId]
-      );
+    if (result.rows.length === 0) {
+      console.log("ℹ️ No subscriptions for user", userId);
+      return res.json({ message: "No subscriptions for this user." });
+    }
 
-      console.log(`Alacsony nedvesség (${moistureNum}%) - ${subs.length} feliratkozónak küldünk push-t.`);
+    const title = "Növényfigyelő - Alacsony nedvesség";
+    const body = plantName
+      ? `A(z) ${plantName} talajnedvessége ${moisture}% alá esett. Öntözés szükséges.`
+      : `A növény talajnedvessége ${moisture}% alá esett. Öntözés szükséges.`;
 
-      const notificationPayload = JSON.stringify({
-        title: "Növényfigyelő",
-        body: `Figyelem! A(z) ${deviceId} növény nedvessége ${moistureNum}% alá esett.`,
-        icon: "/icon-192.png"
-      });
-
-      for (const sub of subs) {
-        const pushSub = {
-          endpoint: sub.endpoint,
-          keys: {
-            p256dh: sub.p256dh,
-            auth: sub.auth,
-          },
-        };
-
-        webPush
-          .sendNotification(pushSub, notificationPayload)
-          .catch((err) => {
-            console.error("Push küldési hiba egy feliratkozónál:", err.statusCode || err);
-          });
+    const payload = JSON.stringify({
+      title,
+      body,
+      icon: "/icon-192.png",
+      data: {
+        moisture,
+        threshold,
+        userId,
+        plantName: plantName || null
       }
-    }
+    });
 
-    return res.json({ success: true });
+    const sendPromises = result.rows.map(row => {
+      return webpush.sendNotification(row.subscription, payload).catch(err => {
+        console.error("❌ Error sending push:", err);
+      });
+    });
+
+    await Promise.all(sendPromises);
+
+    return res.json({ message: "Notifications sent", count: result.rows.length });
   } catch (err) {
-    console.error("Hiba /api/measurement:", err);
-    return res.status(500).json({ error: "Szerver hiba /api/measurement" });
+    console.error("❌ Error in notify-low-moisture:", err);
+    return res.status(500).json({ error: "Internal server error" });
   }
 });
 
-// ---- API: Legutóbbi mérés lekérése (ha később kellene) ----
-app.get("/api/latest", async (req, res) => {
-  try {
-    const { deviceId } = req.query;
-
-    if (!deviceId) {
-      return res.status(400).json({ error: "Hiányzik deviceId query paraméter." });
-    }
-
-    const { rows } = await pool.query(
-      `
-      SELECT moisture, created_at
-      FROM measurements
-      WHERE device_id = $1
-      ORDER BY created_at DESC
-      LIMIT 1;
-      `,
-      [deviceId]
-    );
-
-    if (rows.length === 0) {
-      return res.json({ moisture: null, createdAt: null });
-    }
-
-    return res.json({
-      moisture: Number(rows[0].moisture),
-      createdAt: rows[0].created_at,
-    });
-  } catch (err) {
-    console.error("Hiba /api/latest:", err);
-    return res.status(500).json({ error: "Szerver hiba /api/latest" });
-  }
+app.listen(PORT, () => {
+  console.log(`🚀 Server listening on port ${PORT}`);
 });
-
-// ---- Indítás ----
-initDb()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Szerver fut a ${PORT} porton`);
-    });
-  })
-  .catch((err) => {
-    console.error("Nem sikerült az adatbázist inicializálni:", err);
-    process.exit(1);
-  });

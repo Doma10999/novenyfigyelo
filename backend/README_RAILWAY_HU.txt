@@ -1,22 +1,43 @@
-ESP Növényfigyelő – Railway backend
-===================================
+Növényfigyelő – Railway backend (Node.js + PostgreSQL + Web Push)
 
-Ez a mappa a Node.js + Express + PostgreSQL + Web Push (VAPID) alapú backendet tartalmazza,
-amit Railway-en tudsz futtatni. Feladata:
+LÉPÉSEK RAILWAY-EN:
+-------------------
 
-- ESP32 eszköz méréseit fogadni (`POST /api/measurement`)
-- a méréseket adatbázisban tárolni
-- ha a nedvesség 35% alá esik, push értesítést küldeni azoknak, akik
-  az adott device-ra feliratkoztak (`POST /api/subscribe`)
-- opcionálisan a frontendnek kiszolgálni a legutóbbi mérést (`GET /api/latest`)
+1) A GitHub repóban ez a backend mappa legyen a /backend útvonalon.
+   A Railway szolgáltatás Root Directory-ja: /backend
 
-Szükséges environment változók Railway-en (Variables fülön):
+2) Railway-en a Variables fülön állítsd be az alábbiakat:
+   - DATABASE_URL  → a Railway Postgres szolgáltatásról "DATABASE_URL" (vagy a saját connection string)
+   - VAPID_PUBLIC_KEY  → a böngészős push kulcs publikus része
+   - VAPID_PRIVATE_KEY → a VAPID kulcs privát része
 
-- `DATABASE_URL`       – Railway PostgreSQL connection string (automatikus, ha összekötöd)
-- `VAPID_PUBLIC_KEY`   – a nyilvános VAPID kulcsod (ugyanaz, mint a frontenden)
-- `VAPID_PRIVATE_KEY`  – a privát VAPID kulcsod (csak a backend használja)
+3) Deploy után a backend alap URL-je valami ilyesmi lesz:
+   https://valami.up.railway.app
 
-Futtatás Railway-en:
-- Deploy from GitHub repo
-- Add PostgreSQL
-- Állítsd be az env változókat
+   Elérhető végpontok:
+     GET  /                          → healthcheck
+     POST /subscribe                 → feliratkozás mentése
+     POST /notify-low-moisture      → alacsony nedvesség esetén értesítés küldése
+
+/subscribe végpont:
+-------------------
+  Body (JSON):
+    {
+      "userId": "FELHASZNALO_AZONOSITO",
+      "subscription": { ... böngésző push subscription objektum ... }
+    }
+
+/notify-low-moisture végpont:
+-----------------------------
+  Ezt hívhatja az ESP32 (vagy más backend logika).
+
+  Body (JSON):
+    {
+      "userId": "FELHASZNALO_AZONOSITO",
+      "moisture": 30,
+      "threshold": 35,          // opcionális, alapértelmezés 35
+      "plantName": "Anyósnyelv" // opcionális
+    }
+
+  Ha moisture < threshold:
+    - a megadott userId-hez tartozó összes subscription-re push értesítés megy.
