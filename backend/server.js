@@ -48,10 +48,12 @@ ensureTable().catch(err => {
 
 // --- Web Push config ---
 webpush.setVapidDetails(
-  "mailto:example@example.com",
+  "mailto:doma10999@gmail.com",
   VAPID_PUBLIC_KEY,
   VAPID_PRIVATE_KEY
 );
+console.log("✅ Using VAPID public key (first 16 chars):", (VAPID_PUBLIC_KEY || "").slice(0, 16));
+
 
 // Simple healthcheck
 app.get("/", (req, res) => {
