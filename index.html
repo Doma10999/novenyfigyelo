@@ -1042,6 +1042,10 @@
         const userCred = await signInWithEmailAndPassword(auth, emailInput.value, passInput.value);
         const user = userCred.user;
 
+        window.currentUserUid = user.uid; // 🔥 EZ HIÁNYZOTT
+
+
+
         // localstorage hozzáadás
         addStoredAccount(emailInput.value, user.uid);
 
@@ -1180,10 +1184,11 @@
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            uid: firebase.auth().currentUser.uid,
+            uid: window.currentUserUid,
             subscription: newSub.toJSON()
           })
         });
+
 
 
       } catch (err) {
