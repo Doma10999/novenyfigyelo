@@ -1,6 +1,6 @@
 const { getDb } = require("./pushCommon");
 
-exports.handler = async (event) => {
+exports.handler = async (event, context) => {
   if (event.httpMethod !== "POST") {
     return {
       statusCode: 405,
@@ -11,18 +11,20 @@ exports.handler = async (event) => {
 
   try {
     const body = JSON.parse(event.body || "{}");
-    const { uid, deviceId, subscription } = body;
+    const { uid, subscription } = body;
 
-    if (!uid || !deviceId || !subscription) {
+    if (!uid || !subscription) {
       return {
         statusCode: 400,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ error: "uid + deviceId + subscription kötelező" }),
+        body: JSON.stringify({ error: "uid és subscription kötelező" }),
       };
     }
 
     const db = getDb();
-    await db.ref(`/pushSubscriptions/${uid}/${deviceId}`).set(subscription);
+    await db.ref(`/pushSubscriptions/${uid}`).set({
+      subscription
+    });
 
     return {
       statusCode: 200,
