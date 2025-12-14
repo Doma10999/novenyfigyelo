@@ -731,9 +731,6 @@
 
       card.innerHTML = `
         <button class="deleteBtn" aria-label="Fiók törlése">✖</button>
-        <div class="battery-box" style="display:none;">
-          <img class="battery-icon" src="batteryPercent/battery_100.png" alt="Akkumulátor">
-        </div>
 
         <div class="battery-box">
           <img class="battery-icon" src="batteryPercent/battery_100.png" alt="akku">
@@ -1183,11 +1180,11 @@
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            subscription: newSub.toJSON(),
-            uid: window.jelenlegiUid,
-            deviceId: window.jelenlegiEszkozID
+            uid: firebase.auth().currentUser.uid,
+            subscription: newSub.toJSON()
           })
         });
+
 
       } catch (err) {
         console.error("Push feliratkozás hiba:", err);
