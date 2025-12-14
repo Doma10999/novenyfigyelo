@@ -1003,6 +1003,7 @@
 
     // ====== Fiók betöltés: UID -> devices -> minden eszköz külön kártya ======
     async function addAccountByUid(uid, emailLabel) {
+     window.currentUserUid = uid; // <-- EZ A FIX
       // lekérjük a devices csomópontot
       const devicesSnap = await get(ref(db, `users/${uid}/devices`));
       if (!devicesSnap.exists()) return;
