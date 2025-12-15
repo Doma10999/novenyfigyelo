@@ -1,0 +1,5 @@
+[build]
+publish = "frontend"
+
+# (opcionális) OneSignal SDK worker fájl rooton kell legyen, ezért a publish mappa tartalmazza.
+
