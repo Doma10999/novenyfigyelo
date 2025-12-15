@@ -1,129 +1,162 @@
-import express from "express";
+/**
+ * Növényfigyelő – Railway backend
+ * Firebase RTDB -> OneSignal Web Push
+ */
+import http from "http";
 import admin from "firebase-admin";
+import fetch from "node-fetch";
 
-const app = express();
-app.use(express.json());
+const PORT = process.env.PORT || 3000;
 
-// ===== Required ENV (Railway Variables) =====
-// Firebase Admin
-const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID;
-const FIREBASE_CLIENT_EMAIL = process.env.FIREBASE_CLIENT_EMAIL;
-const FIREBASE_PRIVATE_KEY = process.env.FIREBASE_PRIVATE_KEY; // keep \n as \\n in Railway
-const FIREBASE_DB_URL = process.env.FIREBASE_DB_URL;
-
-// OneSignal
-const ONESIGNAL_APP_ID = process.env.ONESIGNAL_APP_ID;
-const ONESIGNAL_API_KEY = process.env.ONESIGNAL_API_KEY; // OneSignal REST API Key
-
-function must(v, name){
-  if(!v) throw new Error(`Missing env: ${name}`);
+function need(name){
+  const v = process.env[name];
+  if(!v) throw new Error(`Missing env var: ${name}`);
   return v;
 }
 
-let db = null;
-try{
-  must(FIREBASE_PROJECT_ID,"FIREBASE_PROJECT_ID");
-  must(FIREBASE_CLIENT_EMAIL,"FIREBASE_CLIENT_EMAIL");
-  must(FIREBASE_PRIVATE_KEY,"FIREBASE_PRIVATE_KEY");
-  must(FIREBASE_DB_URL,"FIREBASE_DB_URL");
+const FIREBASE_PROJECT_ID = need("FIREBASE_PROJECT_ID");
+const FIREBASE_CLIENT_EMAIL = need("FIREBASE_CLIENT_EMAIL");
+const FIREBASE_PRIVATE_KEY = need("FIREBASE_PRIVATE_KEY").replace(/\\n/g, "\n");
+const FIREBASE_DB_URL = need("FIREBASE_DB_URL");
+const ONESIGNAL_APP_ID = need("ONESIGNAL_APP_ID");
+const ONESIGNAL_API_KEY = need("ONESIGNAL_API_KEY");
 
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: FIREBASE_PROJECT_ID,
-      clientEmail: FIREBASE_CLIENT_EMAIL,
-      privateKey: FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
-    }),
-    databaseURL: FIREBASE_DB_URL
-  });
+const THRESHOLD_DEFAULT = Number(process.env.THRESHOLD_DEFAULT || 35);
+const COOLDOWN_MINUTES = Number(process.env.COOLDOWN_MINUTES || 180);
 
-  db = admin.database();
-  console.log("Firebase Admin initialized.");
-}catch(e){
-  console.error("Firebase init error:", e.message);
-}
+admin.initializeApp({
+  credential: admin.credential.cert({
+    projectId: FIREBASE_PROJECT_ID,
+    clientEmail: FIREBASE_CLIENT_EMAIL,
+    privateKey: FIREBASE_PRIVATE_KEY,
+  }),
+  databaseURL: FIREBASE_DB_URL,
+});
 
-async function sendOneSignalToSubscription(subscriptionId, title, body){
-  must(ONESIGNAL_APP_ID,"ONESIGNAL_APP_ID");
-  must(ONESIGNAL_API_KEY,"ONESIGNAL_API_KEY");
-  if(!subscriptionId) return;
+const db = admin.database();
+const nowMs = () => Date.now();
 
-  const payload = {
-    app_id: ONESIGNAL_APP_ID,
-    include_subscription_ids: [subscriptionId],
-    target_channel: "push",
-    headings: { en: title, hu: title },
-    contents: { en: body, hu: body }
-  };
-
-  const res = await fetch("https://api.onesignal.com/notifications", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "Authorization": `Basic ${ONESIGNAL_API_KEY}`
-    },
-    body: JSON.stringify(payload)
-  });
-
-  const data = await res.json().catch(()=> ({}));
-  if(!res.ok){
-    console.error("OneSignal error:", res.status, data);
-    throw new Error("OneSignal API error");
+function pickNumber(obj, keys){
+  for(const k of keys){
+    const v = obj?.[k];
+    if(typeof v === "number") return v;
+    if(typeof v === "string" && v.trim() !== "" && !isNaN(Number(v))) return Number(v);
   }
-  return data;
+  return null;
+}
+function pickString(obj, keys){
+  for(const k of keys){
+    const v = obj?.[k];
+    if(typeof v === "string" && v.trim() !== "") return v.trim();
+  }
+  return null;
+}
+function computeThreshold(device){
+  const t = pickNumber(device, ["threshold","minMoisture","minValue"]);
+  return (t!=null) ? t : THRESHOLD_DEFAULT;
 }
 
-// ===== Core check =====
-// DB layout (as in your index.html):
-// users/{uid}/devices/{deviceId}/sensorValue   -> percent (0..100)
-// users/{uid}/devices/{deviceId}/displayName   -> name
-// users/{uid}/devices/{deviceId}/plantType     -> category name (optional)
-// users/{uid}/devices/{deviceId}/webpush       -> { enabled, thresholdPercent, subscriptionId }
+async function sendOneSignalPush({playerId,title,message,url}){
+  const body = {
+    app_id: ONESIGNAL_APP_ID,
+    include_player_ids: [playerId],
+    headings: { en: title },
+    contents: { en: message },
+  };
+  if(url) body.url = url;
+
+  const res = await fetch("https://onesignal.com/api/v1/notifications",{
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json; charset=utf-8",
+      "Authorization":`Basic ${ONESIGNAL_API_KEY}`,
+    },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  if(!res.ok) throw new Error(`OneSignal ${res.status}: ${text}`);
+  return text;
+}
+
+function shouldNotify(device){
+  const value = pickNumber(device, ["sensorValue","moisture","value","percent"]);
+  if(value==null) return {ok:false, reason:"no_value"};
+  const threshold = computeThreshold(device);
+  const lastPushAt = pickNumber(device, ["lastPushAt","lastNotificationAt"]);
+  if(lastPushAt!=null){
+    const diffMin = (nowMs()-lastPushAt)/60000;
+    if(diffMin < COOLDOWN_MINUTES) return {ok:false, reason:"cooldown", value, threshold};
+  }
+  if(value <= threshold) return {ok:true, value, threshold};
+  return {ok:false, reason:"above_threshold", value, threshold};
+}
+
 async function runCheck(){
-  if(!db) throw new Error("Firebase not initialized.");
+  const snap = await db.ref("users").get();
+  const users = snap.exists() ? snap.val() : {};
+  const results = {scanned:0, notified:0, errors:0, details:[]};
 
-  const usersSnap = await db.ref("users").once("value");
-  const users = usersSnap.val() || {};
-  let notified = 0;
+  for(const uid of Object.keys(users||{})){
+    const devices = users?.[uid]?.devices || {};
+    for(const deviceId of Object.keys(devices||{})){
+      results.scanned++;
+      const device = devices[deviceId] || {};
+      const webpush = device.webpush || {};
+      const enabled = !!webpush.enabled;
+      const playerId = pickString(webpush, ["playerId","playerID","subscriptionId","subId","onesignalPlayerId"]);
+      if(!enabled || !playerId) continue;
 
-  for(const uid of Object.keys(users)){
-    const u = users[uid] || {};
-    const devices = u.devices || {};
-    for(const deviceId of Object.keys(devices)){
-      const d = devices[deviceId] || {};
-      const moisture = Number(d.sensorValue);
-      if(!Number.isFinite(moisture)) continue;
+      const dec = shouldNotify(device);
+      if(!dec.ok) continue;
 
-      const webpush = d.webpush || null;
-      if(!webpush || !webpush.enabled) continue;
-
-      const threshold = Number(webpush.thresholdPercent ?? 35);
-      const subId = webpush.subscriptionId;
-
-      if(Number.isFinite(threshold) && moisture <= threshold && subId){
-        const name = d.displayName || "növényed";
-        await sendOneSignalToSubscription(
-          subId,
-          "Növényfigyelő – locsolási emlékeztető",
-          `A(z) ${name} vízszintje ${moisture}% (küszöb: ${threshold}%). Ideje meglocsolni!`
-        );
-        notified++;
+      try{
+        const title="Növényfigyelő";
+        const message=`Figyelem! A talajnedvesség ${dec.value}% (küszöb: ${dec.threshold}%). Ideje locsolni.`;
+        const url = pickString(device, ["dashboardUrl","url"]);
+        await sendOneSignalPush({playerId, title, message, url});
+        await db.ref(`users/${uid}/devices/${deviceId}/lastPushAt`).set(nowMs());
+        results.notified++;
+        results.details.push({uid, deviceId, sent:true, value:dec.value, threshold:dec.threshold});
+      }catch(e){
+        results.errors++;
+        results.details.push({uid, deviceId, sent:false, error:String(e)});
       }
     }
   }
-  return {notified};
+  return results;
 }
 
-// Manual trigger (for testing)
-app.get("/run-check", async (req,res)=>{
-  try{
-    const out = await runCheck();
-    res.json({ok:true, ...out});
-  }catch(e){
-    res.status(500).json({ok:false, error:e.message});
+function sendJson(res, code, obj){
+  res.writeHead(code,{
+    "Content-Type":"application/json; charset=utf-8",
+    "Access-Control-Allow-Origin":"*",
+  });
+  res.end(JSON.stringify(obj,null,2));
+}
+
+const server = http.createServer(async (req,res)=>{
+  const url = new URL(req.url, `http://${req.headers.host}`);
+
+  if(req.method==="GET" && url.pathname==="/health"){
+    return sendJson(res,200,{ok:true, service:"novenyfigyelo-backend", time:new Date().toISOString()});
   }
+  if(req.method==="GET" && url.pathname==="/run-check"){
+    try{
+      const out = await runCheck();
+      return sendJson(res,200,{ok:true, ...out});
+    }catch(e){
+      return sendJson(res,500,{ok:false, error:String(e)});
+    }
+  }
+  if(req.method==="OPTIONS"){
+    res.writeHead(204,{
+      "Access-Control-Allow-Origin":"*",
+      "Access-Control-Allow-Methods":"GET,POST,OPTIONS",
+      "Access-Control-Allow-Headers":"Content-Type,Authorization",
+    });
+    return res.end();
+  }
+  return sendJson(res,404,{ok:false, error:"Not found"});
 });
 
-app.get("/", (req,res)=> res.send("Növényfigyelő OneSignal backend fut."));
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, ()=> console.log("Listening on", PORT));
+server.listen(PORT, ()=> console.log(`Backend listening on port ${PORT}`));
