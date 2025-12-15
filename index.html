@@ -1148,20 +1148,6 @@
 
     // ====== Expose for push script ======
     window.__setSelectedDevice = setSelectedDevice;
-
-    // ====== OneSignal push beállítás mentés (a kiválasztott eszközre) ======
-    window.__saveWebPushPreference = async function({ uid, deviceId, enabled, thresholdPercent, subscriptionId }) {
-      if (!uid || !deviceId) return;
-      const webpushRef = ref(db, `users/${uid}/devices/${deviceId}/webpush`);
-      const payload = {
-        enabled: !!enabled,
-        thresholdPercent: Number(thresholdPercent) || 35,
-        subscriptionId: subscriptionId || null,
-        updatedAt: Date.now()
-      };
-      await set(webpushRef, payload);
-    };
-
   </script>
 
   <!-- Push reg + bell modal (megtartva), csak a kiválasztott eszközre regisztrál -->
@@ -1213,9 +1199,9 @@
     }
 
     window.subscribeUserToPush = subscribeUserToPush;
-  </script>  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-
-<script>
+  </script>
+    <script src="https://cdn.onesignal.com/sdks/OneSignalSDK.js" async=""></script>
+  <script>
     window.OneSignal = window.OneSignal || [];
     OneSignal.push(function() {
       OneSignal.init({
@@ -1261,82 +1247,34 @@
         notifModal.style.display = 'none';
         updateBellStyle();
 
-        if (!window.currentUserUid) {
-          alert("Előbb lépj be egy fiókba!");
-          return;
-        }
-        if (!window.jelenlegiEszkozID) {
-          alert("Előbb válassz ki egy növényt (kattints egy kártyára)!");
-          return;
-        }
-
-        // OneSignal feliratkozás + Firebase mentés (csak a kiválasztott eszközre)
-        window.OneSignal = window.OneSignal || [];
-        OneSignal.push(async function() {
-          try {
-            // Kérjük az engedélyt, majd bekapcsoljuk a push-t
-            await OneSignal.Notifications.requestPermission();
-            await OneSignal.User.PushSubscription.optIn();
-
-            const subId = await OneSignal.User.PushSubscription.id;
-
-            // 35% alatti küszöb (ha később kategória alapján akarod: ide számoljuk)
-            const thresholdPercent = 35;
-
-            if (typeof window.__saveWebPushPreference === "function") {
-              await window.__saveWebPushPreference({
-                uid: window.currentUserUid,
-                deviceId: window.jelenlegiEszkozID,
-                enabled: true,
-                thresholdPercent,
-                subscriptionId: subId
-              });
-            }
-
-            alert("Push értesítés bekapcsolva ehhez a növényhez ✅");
-          } catch (e) {
-            console.error("OneSignal feliratkozási hiba:", e);
-            alert("Nem sikerült bekapcsolni a push értesítést. Nézd meg a konzolt.");
+        Notification.requestPermission().then(function(permission){
+          if (permission === "granted") {
+            // ⬇⬇⬇ IDE ⬇⬇⬇
+            OneSignal.push(function() {
+              OneSignal.showSlidedownPrompt();
+            });
           }
         });
       });
 
-}
-        });
-      });
 
-
-      noBtn.addEventListener('click', async function(){
+      noBtn.addEventListener('click', function(){
         notifEnabled = false;
         localStorage.setItem('notifEnabled', 'false');
         notifModal.style.display = 'none';
         updateBellStyle();
-
-        // OneSignal leiratkozás + Firebase mentés
-        window.OneSignal = window.OneSignal || [];
-        OneSignal.push(async function() {
-          try {
-            await OneSignal.User.PushSubscription.optOut();
-          } catch (e) {
-            console.warn("OneSignal optOut hiba (nem kritikus):", e);
-          }
-        });
-
-        if (window.currentUserUid && window.jelenlegiEszkozID && typeof window.__saveWebPushPreference === "function") {
-          await window.__saveWebPushPreference({
-            uid: window.currentUserUid,
-            deviceId: window.jelenlegiEszkozID,
-            enabled: false,
-            thresholdPercent: 35,
-            subscriptionId: null
-          });
-        }
       });
 
-window.addEventListener('click', function(e){
+      window.addEventListener('click', function(e){
         if (e.target === notifModal) notifModal.style.display = 'none';
       });
-);
+
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js')
+          .then(function() { console.log('Service Worker regisztrálva'); })
+          .catch(function(err) { console.log('Service Worker hiba:', err); });
+      }
+    });
   </script>
 </head>
 
