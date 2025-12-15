@@ -6,6 +6,20 @@
   <title>Növényfigyelő</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
 
+  <!-- OneSignal Web Push (Custom Code) -->
+  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+  <script>
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    OneSignalDeferred.push(async function(OneSignal) {
+      await OneSignal.init({
+        appId: "6a595cdc-e443-4179-bc11-95241c8ad20f",
+        notifyButton: { enable: false },
+        promptOptions: { slidedown: { prompts: [{ type: "push", autoPrompt: false }] } }
+      });
+      // OneSignal.Debug.setLogLevel('trace'); // ha debug kell
+    });
+  </script>
+
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
 
@@ -476,7 +490,7 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
     
-    // expose for push/email helpers
+    // expose for push helpers
     window.__firebaseDb = db;
     window.__firebaseRef = ref;
     window.__firebaseUpdate = update;
@@ -829,10 +843,7 @@ const auth = getAuth();
       card.addEventListener("click", (e) => {
         // ha törlés / gomb nyomás -> ne ütközzön
         if (e.target.closest(".deleteBtn") || e.target.closest(".edit-pill") || e.target.closest(".name-edit-wrap") || e.target.closest("select") || e.target.closest("input") ) return;
-        window.jelenlegiUID = uid;
-        window.jelenlegiEmail = email;
         setSelectedDevice(deviceId);
-
       });
 
       // alapból legyen kiválasztva az első, ha még nincs
@@ -1153,102 +1164,89 @@ const auth = getAuth();
     window.__setSelectedDevice = setSelectedDevice;
   </script>
 
-  
-<!-- Push értesítés: OneSignal (ingyenes) + a te harang modalod -->
-<script>
-  // futtasd biztosan a OneSignal SDK betöltése után
-  function runOneSignal(fn) {
-    return new Promise((resolve, reject) => {
-      window.OneSignalDeferred = window.OneSignalDeferred || [];
-      OneSignalDeferred.push(async function(OneSignal) {
-        try { resolve(await fn(OneSignal)); } catch (e) { reject(e); }
+    <!-- Push: OneSignal (ingyenes) – csak a kiválasztott fiók+eszköz -->
+  <script>
+    function runOneSignal(fn) {
+      return new Promise((resolve, reject) => {
+        window.OneSignalDeferred = window.OneSignalDeferred || [];
+        OneSignalDeferred.push(async function(OneSignal) {
+          try { resolve(await fn(OneSignal)); } catch (e) { reject(e); }
+        });
       });
-    });
-  }
+    }
 
-  // UI állapot
-  let notifEnabled = false;
+    // UI állapot: uid+deviceId alapján
+    function notifKey() {
+      return "notifEnabled|" + (window.jelenlegiUID || "") + "|" + (window.jelenlegiEszkozID || "");
+    }
 
-  // Ezt hívjuk meg a "IGEN" gombnál
-  async function enableNotificationsForSelectedDevice() {
-    try {
-      if (!window.jelenlegiEszkozID) {
-        alert("Előbb válassz ki egy eszközt (kattints a kártyára)!");
+    function setBellState(enabled) {
+      const bellBtn = document.getElementById("notifBellBtn");
+      if (!bellBtn) return;
+      bellBtn.classList.toggle("inactive", !enabled);
+    }
+
+    async function enableNotificationsForSelected() {
+      if (!window.jelenlegiUID || !window.jelenlegiEszkozID) {
+        alert("Válassz fiókot + eszközt (kattints egy kártyára), utána kapcsold be.");
         return;
       }
-      if (!window.jelenlegiUID) {
-        alert("Jelentkezz be, és válassz fiókot!");
-        return;
-      }
 
-      // 1) OneSignal: azonosítsuk a felhasználót az external_id-vel (uid)
+      // 1) OneSignal: kötés a kiválasztott Firebase UID-hoz
       await runOneSignal(async (OneSignal) => {
         await OneSignal.login(String(window.jelenlegiUID));
       });
 
       // 2) Engedélykérés (böngésző prompt)
-      const permission = await runOneSignal(async (OneSignal) => {
-        // ha már engedélyezve van, nem dob új promptot
+      const perm = await runOneSignal(async (OneSignal) => {
+        // ha már granted, nem dob új promptot
         await OneSignal.Notifications.requestPermission();
-        return OneSignal.Notifications.permission; // 'granted' / 'denied' / 'default'
+        return OneSignal.Notifications.permission;
       });
 
-      if (permission !== "granted") {
-        alert("Az értesítés nincs engedélyezve a böngészőben.");
+      if (perm !== "granted") {
+        alert("A böngészőben nincs engedélyezve az értesítés (Settings → Notifications).");
         return;
       }
 
-      // 3) Tag-ek: hogy a backend (Netlify Scheduled Function) célzottan tudjon küldeni
+      // 3) Tag-ek (backend / későbbi célzás miatt)
       await runOneSignal(async (OneSignal) => {
         OneSignal.User.addTags({
           uid: String(window.jelenlegiUID),
           deviceId: String(window.jelenlegiEszkozID)
         });
-
-        // Email csatorna (opcionális): a belépési emailt hozzáadjuk OneSignal-hoz
+        // email csatorna opcionális
         if (window.jelenlegiEmail) {
           try { await OneSignal.User.addEmail(String(window.jelenlegiEmail)); } catch (e) {}
         }
       });
 
-      // 4) Firebase-be elmentjük, hogy ennél az eszköznél be van kapcsolva
-      // (így a Netlify scheduled function tudja, kinek kell küldeni)
+      // 4) Firebase-ben jelöljük, hogy ezen az eszközön ON
       try {
-        if (window.__firebaseDb && window.__firebaseUpdate && window.__firebaseRef) {
+        if (window.__firebaseDb && window.__firebaseRef && window.__firebaseUpdate) {
           const p = `users/${window.jelenlegiUID}/devices/${window.jelenlegiEszkozID}`;
           await window.__firebaseUpdate(window.__firebaseRef(window.__firebaseDb, p), {
             notifEnabled: true,
             notifEnabledAt: Date.now(),
-            notifCooldownMs: 6 * 60 * 60 * 1000, // 6 óra
-            notifDisplayThreshold: 35 // a kategóriához igazított "kijelzett %" küszöb
+            notifDisplayThreshold: 35,
+            notifCooldownMs: 6 * 60 * 60 * 1000
           });
         }
       } catch (e) {
-        console.warn("Firebase notif mentés nem sikerült:", e);
+        console.warn("Firebase notif mentés hiba:", e);
       }
 
-      notifEnabled = true;
-      localStorage.setItem("notifEnabled|" + window.jelenlegiUID + "|" + window.jelenlegiEszkozID, "1");
-      updateBellUI();
-      alert("Kész! Az értesítések engedélyezve.");
-    } catch (err) {
-      console.error("OneSignal feliratkozás hiba:", err);
-      alert("Hiba történt az értesítés bekapcsolásakor. Nézd meg a konzolt (F12).");
+      localStorage.setItem(notifKey(), "1");
+      setBellState(true);
+      alert("Kész! Push bekapcsolva ennél a fiók+eszköz párosnál.");
     }
-  }
 
-  async function disableNotificationsForSelectedDevice() {
-    try {
-      if (!window.jelenlegiEszkozID || !window.jelenlegiUID) return;
+    async function disableNotificationsForSelected() {
+      if (!window.jelenlegiUID || !window.jelenlegiEszkozID) return;
 
-      // csak a saját app logikádhoz: OneSignalból nem töröljük a subscriptiont,
-      // csak a tag-et vesszük le, és Firebase-ben kikapcsoljuk
-      await runOneSignal(async (OneSignal) => {
-        OneSignal.User.removeTags(["deviceId"]);
-      });
-
+      // OneSignal subscriptiont nem töröljük (browser-szintű), csak logikailag OFF
       try {
-        if (window.__firebaseDb && window.__firebaseUpdate && window.__firebaseRef) {
+        if (window.__firebaseDb && window.__firebaseRef && window.__firebaseUpdate) {
           const p = `users/${window.jelenlegiUID}/devices/${window.jelenlegiEszkozID}`;
           await window.__firebaseUpdate(window.__firebaseRef(window.__firebaseDb, p), {
             notifEnabled: false,
@@ -1257,79 +1255,112 @@ const auth = getAuth();
         }
       } catch (e) {}
 
-      notifEnabled = false;
-      localStorage.removeItem("notifEnabled|" + window.jelenlegiUID + "|" + window.jelenlegiEszkozID);
-      updateBellUI();
-      alert("Értesítések kikapcsolva ennél az eszköznél.");
-    } catch (err) {
-      console.error("Kikapcsolás hiba:", err);
+      localStorage.removeItem(notifKey());
+      setBellState(false);
+      alert("Push kikapcsolva ennél a fiók+eszköz párosnál.");
     }
-  }
 
-  function updateBellUI() {
-    const bellBtn = document.getElementById("notifBellBtn");
-    if (!bellBtn) return;
-    bellBtn.classList.toggle("active", !!notifEnabled);
-  }
+    window.addEventListener("DOMContentLoaded", () => {
+      const bellBtn = document.getElementById("notifBellBtn");
+      const notifModal = document.getElementById("notifModal");
+      const closeBtn = document.getElementById("notifModalClose");
+      const yesBtn = document.getElementById("notifYes");
+      const noBtn = document.getElementById("notifNo");
 
-  window.addEventListener("DOMContentLoaded", function () {
-    const bellBtn = document.getElementById("notifBellBtn");
-    const notifModal = document.getElementById("notifModal");
-    const closeBtn = document.getElementById("notifModalClose");
-    const yesBtn = document.getElementById("notifYesBtn");
-    const noBtn = document.getElementById("notifNoBtn");
+      // induláskor: ha már van választott eszköz, tükrözzük
+      setBellState(localStorage.getItem(notifKey()) === "1");
 
-    function openModal() { if (notifModal) notifModal.style.display = "flex"; }
-    function closeModal() { if (notifModal) notifModal.style.display = "none"; }
+      if (bellBtn) {
+        bellBtn.addEventListener("click", () => {
+          if (!window.jelenlegiUID || !window.jelenlegiEszkozID) {
+            alert("Válassz fiókot + eszközt (kattints egy kártyára), utána kapcsold be.");
+            return;
+          }
+          // frissítsük állapotot az aktuális kiválasztásra
+          setBellState(localStorage.getItem(notifKey()) === "1");
+          notifModal.style.display = "flex";
+        });
+      }
 
-    if (bellBtn) {
-      bellBtn.addEventListener("click", () => {
-        if (!window.jelenlegiUID || !window.jelenlegiEszkozID) {
-          alert("Válassz fiókot + eszközt, utána tudod bekapcsolni.");
-          return;
-        }
-        const key = "notifEnabled|" + window.jelenlegiUID + "|" + window.jelenlegiEszkozID;
-        notifEnabled = localStorage.getItem(key) === "1";
-        updateBellUI();
-        openModal();
+      if (closeBtn) closeBtn.addEventListener("click", () => notifModal.style.display = "none");
+      window.addEventListener("click", (e) => { if (e.target === notifModal) notifModal.style.display = "none"; });
+
+      if (yesBtn) yesBtn.addEventListener("click", async () => {
+        notifModal.style.display = "none";
+        await enableNotificationsForSelected();
       });
-    }
 
-    if (closeBtn) closeBtn.addEventListener("click", closeModal);
-    window.addEventListener("click", (e)=>{ if (e.target === notifModal) closeModal(); });
-
-    if (yesBtn) yesBtn.addEventListener("click", async () => { closeModal(); await enableNotificationsForSelectedDevice(); });
-    if (noBtn) noBtn.addEventListener("click", async () => { closeModal(); await disableNotificationsForSelectedDevice(); });
-
-    // ha van már mentett állapot, frissítsük a harangot induláskor
-    if (window.jelenlegiUID && window.jelenlegiEszkozID) {
-      const key = "notifEnabled|" + window.jelenlegiUID + "|" + window.jelenlegiEszkozID;
-      notifEnabled = localStorage.getItem(key) === "1";
-      updateBellUI();
-    }
-  });
-</script>
-
-
-  <!-- OneSignal Web Push (Custom Code) -->
-  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-  <script>
-    // OneSignal v16: always start with this line
-    window.OneSignalDeferred = window.OneSignalDeferred || [];
-    OneSignalDeferred.push(async function(OneSignal) {
-      // TODO: ide írd be a OneSignal App ID-t (Dashboard -> Settings -> Keys & IDs)
-      await OneSignal.init({
-        appId: "6a595cdc-e443-4179-bc11-95241c8ad20f",
-        // nem kérünk automatikus promptot, mi a saját harang modalból indítjuk
-        promptOptions: {
-          slidedown: { prompts: [{ type: "push", autoPrompt: false }] }
-        }
+      if (noBtn) noBtn.addEventListener("click", async () => {
+        notifModal.style.display = "none";
+        await disableNotificationsForSelected();
       });
-      // extra log, ha hibát keresel:
-      // OneSignal.Debug.setLogLevel('trace');
     });
   </script>
 
+  <script>
+    let notifEnabled = false;
+
+    window.addEventListener('DOMContentLoaded', function(){
+      const bellBtn = document.getElementById('notifBellBtn');
+      const notifModal = document.getElementById('notifModal');
+      const closeBtn = document.getElementById('notifModalClose');
+      const yesBtn = document.getElementById('notifYes');
+      const noBtn = document.getElementById('notifNo');
+
+      function updateBellStyle(){
+        if(notifEnabled) bellBtn.classList.remove("inactive");
+        else bellBtn.classList.add("inactive");
+      }
+
+      notifEnabled = localStorage.getItem('notifEnabled') === 'true';
+      updateBellStyle();
+
+      bellBtn.addEventListener('click', function(){
+        notifModal.style.display = 'flex';
+      });
+
+      closeBtn.addEventListener('click', function(){
+        notifModal.style.display = 'none';
+      });
+
+      yesBtn.addEventListener("click", async function(){
+        notifEnabled = true;
+        localStorage.setItem('notifEnabled', 'true');
+        notifModal.style.display = 'none';
+        updateBellStyle();
+
+        // várjuk meg, hogy legyen kiválasztott eszköz (ha még nem)
+        if (!window.jelenlegiEszkozID) {
+          let tries = 0;
+          while (!window.jelenlegiEszkozID && tries < 30) {
+            await new Promise(r => setTimeout(r, 200));
+            tries++;
+          }
+        }
+
+        Notification.requestPermission().then(function(permission){
+          if (permission === "granted") {
+            window.subscribeUserToPush && window.subscribeUserToPush();
+          }
+        });
+      });
+
+      noBtn.addEventListener('click', function(){
+        notifEnabled = false;
+        localStorage.setItem('notifEnabled', 'false');
+        notifModal.style.display = 'none';
+        updateBellStyle();
+      });
+
+      window.addEventListener('click', function(e){
+        if (e.target === notifModal) notifModal.style.display = 'none';
+      });
+
+      )
+          .catch(function(err) { console.log('Service Worker hiba:', err); });
+      }
+    });
+  </script>
 </head>
 
 <body>

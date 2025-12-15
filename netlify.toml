@@ -1,6 +1,3 @@
-[build]
-  publish = "."
-  functions = "netlify/functions"
 [[headers]]
   for = "/OneSignalSDKWorker.js"
   [headers.values]
