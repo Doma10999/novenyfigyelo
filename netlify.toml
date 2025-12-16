@@ -1,4 +1,0 @@
-[[headers]]
-  for = "/OneSignalSDKWorker.js"
-  [headers.values]
-    Service-Worker-Allowed = "/"
