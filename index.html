@@ -927,7 +927,7 @@
       });
 
       // Firebase: soil sensor
-      const soilRef = ref(db, `users/${uid}/devices/${deviceId}/moisture`);
+      const soilRef = ref(db, `users/${uid}/devices/${deviceId}/sensorValue`);
       onValue(soilRef, (snap) => {
         if (!snap.exists()) return;
         const v = Number(snap.val());
