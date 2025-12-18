@@ -812,25 +812,25 @@
       let currCat = "";
 
       function updateAccountGauge(realPercent, cat) {
-        let display = 0;
+        let display = realPercent;
 
         if (plantCategories[cat]) {
           const { min, max } = plantCategories[cat];
-          display = Math.round(((realPercent - min) / (max - min)) * 100);
-          if (display < 0) display = 0;
-          if (display > 100) display = 100;
-        } else {
-          display = realPercent;
+
+          if (realPercent < min) display = 0;
+          else if (realPercent > max) display = 100;
+          else {
+            display = Math.round(((realPercent - min) / (max - min)) * 100);
+          }
         }
 
         gaugeValueEl.textContent = display + "%";
         const offset = C - (display / 100) * C;
         gaugeCircleEl.style.strokeDashoffset = offset;
+
         const color = getGradientColor(display);
         gaugeCircleEl.style.stroke = color;
         gaugeValueEl.style.color = color;
-
-        return display; // ✅ CSAK ITT SZABAD RETURN
       }
 
 
@@ -930,7 +930,7 @@
       });
 
       // Firebase: soil sensor
-      const soilRef = ref(db, `users/${uid}/devices/${deviceId}/moisture`);
+      const soilRef = ref(db, `users/${uid}/devices/${deviceId}/sensorValue`);
       onValue(soilRef, (snap) => {
         if (!snap.exists()) return;
         const v = Number(snap.val());
