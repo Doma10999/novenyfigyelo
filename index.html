@@ -929,20 +929,46 @@
         await set(plantTypeRef, v);
       });
 
-      // Firebase: soil sensor
+     // Firebase: soil sensor + EMAIL riasztás
+      let lastAlertSent = false;
+
       const soilRef = ref(db, `users/${uid}/devices/${deviceId}/sensorValue`);
-      onValue(soilRef, (snap) => {
+      onValue(soilRef, async (snap) => {
         if (!snap.exists()) return;
+
         const v = Number(snap.val());
-        if (Number.isFinite(v)) {
-          currPercent = v;
-          const displayPct = updateAccountGauge(currPercent, currCat);
-          if (window.__maybeEmailNotify) {
-            window.__maybeEmailNotify({ uid, deviceId, displayPct, plantType: currCat, displayName: titleEl.textContent, fallbackEmail: email });
-          }
-          pushHistory(key, currPercent);
+        if (!Number.isFinite(v)) return;
+
+        currPercent = v;
+        updateAccountGauge(currPercent, currCat);
+        pushHistory(key, currPercent);
+
+        // 🔔 EMAIL riasztás (35% alatt)
+        if (v <= 35 && !lastAlertSent) {
+          lastAlertSent = true;
+
+          await fetch(
+            "https://script.google.com/macros/s/AKfycbz5CwDKgK8jH2e6991Kn1HGC50ftuyT8J-KK04qHF6hxZkxisvzhLXKswEHC7Jl8E3B/exec",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                email: auth.currentUser.email,
+                deviceId: deviceId,
+                moisture: v,
+                category: currCat,
+                plantName: titleEl.textContent
+              })
+            }
+          );
+        }
+
+        // ha visszamegy 40 fölé → újra engedjük a riasztást
+        if (v > 40) {
+          lastAlertSent = false;
         }
       });
+
 
       // Firebase: LED (csak ha van)
       const ledLevelRef = ref(db, `users/${uid}/devices/${deviceId}/ledLevel`);
