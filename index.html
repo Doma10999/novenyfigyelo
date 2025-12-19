@@ -476,6 +476,7 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
     const auth = getAuth();
+    window.__auth = auth;
 
     // expose Firebase helpers for non-module scripts
     window.__db = db;
@@ -553,6 +554,8 @@
     // ====== Eszköz-kártyák (minden eszköz külön) ======
     // deviceCards: key = uid|deviceId -> { card, name, history[], canvas, lastUpdated }
     const deviceCards = new Map();
+    // expose for other scripts
+    window.__deviceCardsMap = deviceCards;
 
     // kiválasztott eszköz push-hoz
     window.jelenlegiEszkozID = null;
@@ -812,6 +815,8 @@
       let currCat = "";
 
       function updateAccountGauge(realPercent, cat) {
+        // visszaadjuk a kijelzett %-ot is
+
         let display = realPercent;
 
         if (plantCategories[cat]) {
@@ -831,8 +836,6 @@
         const color = getGradientColor(display);
         gaugeCircleEl.style.stroke = color;
         gaugeValueEl.style.color = color;
-      
-
         return display;
       }
 
@@ -844,7 +847,6 @@
         window.jelenlegiUID = uid;
         window.jelenlegiEmail = email;
         setSelectedDevice(deviceId);
-        if (window.__refreshEmailBell) window.__refreshEmailBell(uid, deviceId, email);
       });
 
       // alapból legyen kiválasztva az első, ha még nincs
@@ -852,9 +854,6 @@
         window.jelenlegiUID = uid;
         window.jelenlegiEmail = email;
         setSelectedDevice(deviceId);
-        if (window.__refreshEmailBell) window.__refreshEmailBell(uid, deviceId, email);
-        // frissítsük a harang állapotát az első kijelölésnél is
-        if (window.__refreshEmailBell) window.__refreshEmailBell(uid, deviceId, email);
       }
 
       // név szerkesztés UI
@@ -938,37 +937,22 @@
         await set(plantTypeRef, v);
       });
 
-     // Firebase: soil sensor (grafikon) + EMAIL riasztás (Google Apps Scripten keresztül)
+     // Firebase: soil sensor + EMAIL riasztás
 const soilRef = ref(db, `users/${uid}/devices/${deviceId}/sensorValue`);
-onValue(soilRef, async (snap) => {
-  if (!snap.exists()) return;
+      onValue(soilRef, async (snap) => {
+        if (!snap.exists()) return;
 
-  const v = Number(snap.val());
-  if (!Number.isFinite(v)) return;
+        const v = Number(snap.val());
+        if (!Number.isFinite(v)) return;
 
-  currPercent = v;
-
-  // a kijelzett érték a kategória alapján skálázódik (ezt használjuk az email küszöbhöz is)
-  const displayPct = updateAccountGauge(currPercent, currCat);
-
-  // grafikon: a kijelzett értéket mentjük (így logikus a felhasználónak)
-  pushHistory(key, displayPct);
-
-  // EMAIL értesítés: csak ha be van kapcsolva az adott eszköznél
-  if (window.__maybeEmailNotify) {
-    await window.__maybeEmailNotify({
-      uid,
-      deviceId,
-      displayPct,
-      plantType: currCat,
-      displayName: titleEl.textContent,
-      fallbackEmail: (auth && auth.currentUser && auth.currentUser.email) ? auth.currentUser.email : email
-    });
-  }
-});
-
-
-      // Firebase: LED (csak ha van)
+        currPercent = v;
+        const displayPct = updateAccountGauge(currPercent, currCat);
+        pushHistory(key, currPercent);
+        if (window.__maybeEmailNotify) {
+          window.__maybeEmailNotify({ uid, deviceId, displayPct, plantType: currCat, displayName: titleEl.textContent });
+        }
+      });
+// Firebase: LED (csak ha van)
       const ledLevelRef = ref(db, `users/${uid}/devices/${deviceId}/ledLevel`);
       get(ledLevelRef).then((snap) => {
         if (snap.exists()) {
@@ -1058,6 +1042,9 @@ onValue(soilRef, async (snap) => {
 
       // minden eszköz külön kártya
       for (const deviceId of deviceIds) {
+        // csak akkor jelenítsük meg, ha van már szenzor érték (különben "0%" ghost kártyák lesznek)
+        const dev = devicesData[deviceId] || {};
+        if (typeof dev.sensorValue === "undefined") continue;
         createDeviceCardForUser(uid, emailLabel, deviceId);
       }
 
@@ -1191,21 +1178,12 @@ onValue(soilRef, async (snap) => {
   </script>
 
   
-  <!-- Email értesítés (Google Apps Script Web App) -->
+    <!-- Email értesítés (Google Apps Script Web App) -->
   <script>
-    // 1) Ide illeszd be a Google Apps Script /exec URL-t
+    // ====== BEÁLLÍTÁSOK ======
     const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz5CwDKgK8jH2e6991Kn1HGC50ftuyT8J-KK04qHF6hxZkxisvzhLXKswEHC7Jl8E3B/exec";
-
-    // 2) Küszöbök: itt a "kijelzett %" alapján döntünk (amit a kategória skáláz)
-    const EMAIL_THRESHOLD = 35;
-
-    // 3) Védelem: ne spam-eljen (6 óra)
-    const DEFAULT_COOLDOWN_MS = 6 * 60 * 60 * 1000;
-
-    // Kulcs: per-uid + device
-    function keyFor(uid, deviceId) {
-      return `emailNotif|${uid}|${deviceId}`;
-    }
+    const EMAIL_THRESHOLD = 35; // kijelzett % küszöb
+    const DEFAULT_COOLDOWN_MS = 6 * 60 * 60 * 1000; // 6 óra / növény
 
     // Firebase elérés a module scriptből
     function fb() {
@@ -1214,28 +1192,23 @@ onValue(soilRef, async (snap) => {
         ref: window.__ref,
         get: window.__get,
         set: window.__set,
-        update: window.__update,
-        onValue: window.__onValue
+        update: window.__update
       };
     }
 
-    // UI állapot
-    let emailNotifEnabled = false;
+    // ====== UI (harang) ======
+    let notifState = new Map(); // key -> { uid, deviceId, name, enabled }
 
-    async function loadEmailSettings(uid, deviceId) {
+    function makeKey(uid, deviceId) { return `${uid}|${deviceId}`; }
+
+    async function loadEnabled(uid, deviceId) {
       const { db, ref, get } = fb();
       const base = `users/${uid}/devices/${deviceId}`;
-      const [enSnap, emSnap] = await Promise.all([
-        get(ref(db, `${base}/emailNotifEnabled`)),
-        get(ref(db, `${base}/emailNotifEmail`))
-      ]);
-      return {
-        enabled: enSnap.exists() ? !!enSnap.val() : false,
-        email: emSnap.exists() ? String(emSnap.val() || "") : ""
-      };
+      const enSnap = await get(ref(db, `${base}/emailNotifEnabled`));
+      return enSnap.exists() ? !!enSnap.val() : false;
     }
 
-    async function saveEmailSettings(uid, deviceId, enabled, email) {
+    async function setEnabled(uid, deviceId, enabled, email) {
       const { db, ref, update } = fb();
       const base = `users/${uid}/devices/${deviceId}`;
       await update(ref(db, base), {
@@ -1243,20 +1216,140 @@ onValue(soilRef, async (snap) => {
         emailNotifEmail: String(email || ""),
         emailNotifCooldownMs: DEFAULT_COOLDOWN_MS
       });
-      localStorage.setItem(keyFor(uid, deviceId), enabled ? "1" : "0");
     }
 
     function updateBellUI() {
       const bellBtn = document.getElementById("notifBellBtn");
       if (!bellBtn) return;
-      bellBtn.classList.toggle("inactive", !emailNotifEnabled);
+      const anyEnabled = Array.from(notifState.values()).some(v => v.enabled);
+      bellBtn.classList.toggle("inactive", !anyEnabled);
     }
 
-    async function sendEmailViaAppsScript(payload) {
-      if (!GOOGLE_APPS_SCRIPT_URL || GOOGLE_APPS_SCRIPT_URL.includes("PASTE_")) {
-        console.warn("Hiányzik a GOOGLE_APPS_SCRIPT_URL az index.html-ben.");
+    function buildNotifList() {
+      const list = document.getElementById("notifDeviceList");
+      if (!list) return;
+
+      // szép, pipálható lista
+      list.innerHTML = "";
+
+      const items = Array.from(notifState.values());
+      if (items.length === 0) {
+        list.innerHTML = '<div style="opacity:.7;">Nincs betöltött növény.</div>';
         return;
       }
+
+      for (const item of items) {
+        const row = document.createElement("label");
+        row.style.display = "flex";
+        row.style.alignItems = "center";
+        row.style.gap = "10px";
+        row.style.padding = "10px 8px";
+        row.style.borderRadius = "12px";
+        row.style.background = "rgba(240,247,243,0.9)";
+        row.style.boxShadow = "inset 0 0 0 1px rgba(0,0,0,0.04)";
+        row.style.marginBottom = "10px";
+        row.style.cursor = "pointer";
+
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = !!item.enabled;
+        cb.style.width = "18px";
+        cb.style.height = "18px";
+
+        const name = document.createElement("div");
+        name.style.fontWeight = "800";
+        name.style.color = "#0d3b23";
+        name.textContent = item.name || item.deviceId;
+
+        const small = document.createElement("div");
+        small.style.fontSize = "12px";
+        small.style.opacity = "0.7";
+        small.textContent = item.deviceId;
+
+        const textWrap = document.createElement("div");
+        textWrap.style.display = "flex";
+        textWrap.style.flexDirection = "column";
+        textWrap.appendChild(name);
+        textWrap.appendChild(small);
+
+        cb.addEventListener("change", () => {
+          item.enabled = cb.checked;
+          updateBellUI();
+        });
+
+        row.appendChild(cb);
+        row.appendChild(textWrap);
+        list.appendChild(row);
+      }
+    }
+
+    async function refreshNotifStateFromFirebase() {
+      // deviceCards Map: key = uid|deviceId -> { card, name, ... }
+      if (!window.__deviceCardsMap) return;
+
+      const entries = Array.from(window.__deviceCardsMap.entries());
+      notifState = new Map();
+
+      for (const [key, obj] of entries) {
+        const [uid, deviceId] = key.split("|");
+        const enabled = await loadEnabled(uid, deviceId);
+        notifState.set(key, { uid, deviceId, name: obj.name || "", enabled });
+      }
+
+      buildNotifList();
+      updateBellUI();
+    }
+
+    function openNotifModal() {
+      const m = document.getElementById("notifModal");
+      if (m) m.style.display = "flex";
+    }
+    function closeNotifModal() {
+      const m = document.getElementById("notifModal");
+      if (m) m.style.display = "none";
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      const bellBtn = document.getElementById("notifBellBtn");
+      const closeBtn = document.getElementById("notifModalClose");
+      const saveBtn = document.getElementById("notifSave");
+      const cancelBtn = document.getElementById("notifCancel");
+      const modal = document.getElementById("notifModal");
+
+      if (bellBtn) {
+        bellBtn.addEventListener("click", async () => {
+          await refreshNotifStateFromFirebase();
+          openNotifModal();
+        });
+      }
+
+      if (closeBtn) closeBtn.addEventListener("click", closeNotifModal);
+      if (cancelBtn) cancelBtn.addEventListener("click", closeNotifModal);
+      if (modal) window.addEventListener("click", (e) => { if (e.target === modal) closeNotifModal(); });
+
+      if (saveBtn) {
+        saveBtn.addEventListener("click", async () => {
+          const authEmail = (window.__auth && window.__auth.currentUser && window.__auth.currentUser.email) ? window.__auth.currentUser.email : "";
+          // ha nincs bejelentkezés, akkor nem tudjuk kinek küldeni
+          if (!authEmail) {
+            alert("Jelentkezz be, hogy menteni tudd az értesítéseket!");
+            return;
+          }
+
+          for (const item of notifState.values()) {
+            await setEnabled(item.uid, item.deviceId, item.enabled, authEmail);
+          }
+
+          closeNotifModal();
+          updateBellUI();
+          alert("Mentve! Email értesítések beállítva.");
+        });
+      }
+    });
+
+    // ====== EMAIL küldés (automatán, szenzor frissítéskor) ======
+    async function sendEmailViaAppsScript(payload) {
+      if (!GOOGLE_APPS_SCRIPT_URL) return;
       try {
         await fetch(GOOGLE_APPS_SCRIPT_URL, {
           method: "POST",
@@ -1264,12 +1357,12 @@ onValue(soilRef, async (snap) => {
           body: JSON.stringify(payload)
         });
       } catch (e) {
-        console.warn("Email küldés hiba (Apps Script):", e);
+        console.warn("Apps Script email hiba:", e);
       }
     }
 
-    // Ezt hívja a kártya, amikor frissül a szenzor
-    window.__maybeEmailNotify = async function({ uid, deviceId, displayPct, plantType, displayName, fallbackEmail }) {
+    // Ezt hívjuk minden szenzor frissítésnél
+    window.__maybeEmailNotify = async function({ uid, deviceId, displayPct, plantType, displayName }) {
       try {
         if (!uid || !deviceId) return;
         if (!Number.isFinite(displayPct)) return;
@@ -1278,29 +1371,26 @@ onValue(soilRef, async (snap) => {
         const { db, ref, get, set } = fb();
         const base = `users/${uid}/devices/${deviceId}`;
 
-        // be van-e kapcsolva?
         const enSnap = await get(ref(db, `${base}/emailNotifEnabled`));
         const enabled = enSnap.exists() ? !!enSnap.val() : false;
         if (!enabled) return;
 
-        // email
-        const emSnap = await get(ref(db, `${base}/emailNotifEmail`));
-        const email = (emSnap.exists() ? String(emSnap.val() || "") : "") || String(fallbackEmail || "");
+        const emailSnap = await get(ref(db, `${base}/emailNotifEmail`));
+        const email = emailSnap.exists() ? String(emailSnap.val() || "") : "";
         if (!email) return;
 
-        // cooldown (Firebase-ben tárolt utolsó küldés)
         const cdSnap = await get(ref(db, `${base}/emailNotifCooldownMs`));
         const cooldownMs = cdSnap.exists() ? Number(cdSnap.val()) : DEFAULT_COOLDOWN_MS;
 
         const lastSnap = await get(ref(db, `${base}/lastEmailSentAt`));
         const lastAt = lastSnap.exists() ? Number(lastSnap.val()) : 0;
+
         const now = Date.now();
         if (now - lastAt < cooldownMs) return;
 
-        // először beírjuk, hogy "elküldés folyamatban" (spam védelem)
+        // spam védelem: előbb rögzítjük
         await set(ref(db, `${base}/lastEmailSentAt`), now);
 
-        // küldés
         await sendEmailViaAppsScript({
           email,
           deviceId,
@@ -1312,70 +1402,6 @@ onValue(soilRef, async (snap) => {
         console.warn("maybeEmailNotify hiba:", e);
       }
     };
-
-    // Harang modal logika
-    window.addEventListener("DOMContentLoaded", async function() {
-      const bellBtn = document.getElementById("notifBellBtn");
-      const notifModal = document.getElementById("notifModal");
-      const closeBtn = document.getElementById("notifModalClose");
-      const yesBtn = document.getElementById("notifYes");
-      const noBtn = document.getElementById("notifNo");
-      const emailInput = document.getElementById("notifEmailInput");
-
-      function openModal() { if (notifModal) notifModal.style.display = "flex"; }
-      function closeModal() { if (notifModal) notifModal.style.display = "none"; }
-
-      if (!bellBtn) return;
-
-      bellBtn.addEventListener("click", async () => {
-        const uid = window.jelenlegiUID;
-        const deviceId = window.jelenlegiEszkozID;
-        if (!uid || !deviceId) {
-          alert("Előbb válassz fiókot + eszközt (kattints a kártyára)!");
-          return;
-        }
-
-        // beolvassuk az aktuális beállítást Firebase-ből
-        const s = await loadEmailSettings(uid, deviceId);
-        emailNotifEnabled = s.enabled;
-        if (emailInput) {
-          emailInput.value = s.email || window.jelenlegiEmail || "";
-        }
-        updateBellUI();
-        openModal();
-      });
-
-      if (closeBtn) closeBtn.addEventListener("click", closeModal);
-      window.addEventListener("click", (e) => { if (e.target === notifModal) closeModal(); });
-
-      if (yesBtn) yesBtn.addEventListener("click", async () => {
-        const uid = window.jelenlegiUID;
-        const deviceId = window.jelenlegiEszkozID;
-        const email = (emailInput && emailInput.value.trim()) || window.jelenlegiEmail || "";
-        if (!email) {
-          alert("Írd be az email címet!");
-          return;
-        }
-        await saveEmailSettings(uid, deviceId, true, email);
-        emailNotifEnabled = true;
-        updateBellUI();
-        closeModal();
-        alert("Kész! Email értesítés bekapcsolva ennél a növénynél.");
-      });
-
-      if (noBtn) noBtn.addEventListener("click", async () => {
-        const uid = window.jelenlegiUID;
-        const deviceId = window.jelenlegiEszkozID;
-        await saveEmailSettings(uid, deviceId, false, "");
-        emailNotifEnabled = false;
-        updateBellUI();
-        closeModal();
-        alert("Email értesítés kikapcsolva ennél a növénynél.");
-      });
-
-      // induláskor harang színe (ha már van választott device később frissül)
-      updateBellUI();
-    });
   </script>
 
 </head>
@@ -1410,25 +1436,27 @@ onValue(soilRef, async (snap) => {
   <div id="notifModal">
     <div id="notifModalContent">
       <span id="notifModalClose">&times;</span>
-      <h3>Email értesítés beállítás</h3>
-      <p>Küldjek emailt, ha a növény <b>szomjas</b> (kijelzett érték ≤ 35%)?</p>
-      <input id="notifEmailInput" type="email" placeholder="Email cím" style="margin-top:10px;" />
-      <p style="margin-top:8px; opacity:.8; font-size:13px;">Üzenet példa: <b>„Szomjas a növényed – ideje locsolni! 💧”</b></p>
-      <div style="margin-top:22px;">
-        <button id="notifYes" style="background:linear-gradient(145deg,#43a047,#66bb6a);color:#fff;border:none;border-radius:12px;padding:10px 20px;font-size:17px;cursor:pointer;margin:0 9px; width:auto;">
-          Igen
+      <h3>Email értesítés</h3>
+      <p style="margin-top:6px;">Küldjön emailt, ha a kijelzett érték <b>35% alá</b> esik.</p>
+
+      <div id="notifDeviceList" style="text-align:left; margin-top:16px;"></div>
+
+      <div style="margin-top:18px; display:flex; gap:10px; justify-content:center;">
+        <button id="notifSave" style="background:linear-gradient(145deg,#43a047,#66bb6a);color:#fff;border:none;border-radius:12px;padding:10px 18px;font-size:16px;cursor:pointer;width:auto;">
+          Mentés
         </button>
-        <button id="notifNo" style="background:#e0e8e5;color:#555;border:none;border-radius:12px;padding:10px 20px;font-size:17px;cursor:pointer;margin:0 9px; width:auto;">
-          Nem
+        <button id="notifCancel" style="background:#e0e8e5;color:#555;border:none;border-radius:12px;padding:10px 18px;font-size:16px;cursor:pointer;width:auto;">
+          Mégse
         </button>
       </div>
+
       <p style="margin-top:12px; opacity:.75; font-size:13px;">
-        Tipp: válassz ki egy kártyát (kattints rá), és arra a növényre fog vonatkozni az email értesítés.
+        Tipp: pipáld ki azokat a növényeket, amelyeknél kérsz értesítést.
       </p>
     </div>
   </div>
 
-  <div id="chartsModal">
+<div id="chartsModal">
     <div id="chartsModalContent">
       <span id="chartsModalClose">&times;</span>
       <h3 style="color:#0d3b23; margin-bottom:6px;">Grafikonok</h3>
