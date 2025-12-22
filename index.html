@@ -1337,8 +1337,19 @@ const soilRef = ref(db, `users/${uid}/devices/${deviceId}/sensorValue`);
           }
 
           for (const item of notifState.values()) {
-            await setEnabled(item.uid, item.deviceId, item.enabled, authEmail);
-          }
+  if (item.enabled) {
+    await update(ref(db, `users/${item.uid}/devices/${item.deviceId}`), {
+      emailNotifEnabled: true,
+      emailNotifEmail: authEmail,
+      emailNotifCooldownMs: DEFAULT_COOLDOWN_MS
+    });
+  } else {
+    await update(ref(db, `users/${item.uid}/devices/${item.deviceId}`), {
+      emailNotifEnabled: false,
+      emailNotifEmail: null
+    });
+  }
+}
 
           closeNotifModal();
           updateBellUI();
@@ -1503,5 +1514,36 @@ const soilRef = ref(db, `users/${uid}/devices/${deviceId}/sensorValue`);
       </div>
     </div>
   </div>
+
+<!-- === FAB MENU (non-invasive append) === -->
+<style>
+#fabMain{position:fixed;right:25px;bottom:25px;width:70px;height:70px;border-radius:50%;
+background:linear-gradient(145deg,#43a047,#66bb6a);color:#fff;border:none;font-size:34px;
+box-shadow:0 8px 28px rgba(0,0,0,.25);cursor:pointer;z-index:2000}
+.fab{position:fixed;right:25px;width:60px;height:60px;border-radius:50%;
+background:linear-gradient(145deg,#43a047,#66bb6a);color:#fff;border:none;font-size:26px;
+box-shadow:0 8px 28px rgba(0,0,0,.25);cursor:pointer;z-index:1999;
+opacity:0;pointer-events:none;transition:transform .35s ease,opacity .35s ease}
+.fab.show{opacity:1;pointer-events:auto}
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  var main=document.getElementById('fabMain');
+  if(!main) return;
+  var add=document.getElementById('addAccountBtn');
+  var bell=document.getElementById('notifBellBtn');
+  var chart=document.getElementById('chartsBtn');
+  var arr=[add,bell,chart].filter(Boolean);
+  var open=false;
+  main.addEventListener('click', function(){
+    open=!open;
+    arr.forEach(function(b,i){
+      b.classList.toggle('show',open);
+      b.style.transform=open?('translateY(-'+((i+1)*80)+'px)'):'translateY(0)';
+    });
+  });
+});
+</script>
+
 </body>
 </html>
