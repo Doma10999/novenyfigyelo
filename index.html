@@ -328,7 +328,7 @@
     .slider-labels { font-weight: 700; color: #1b3a2a; opacity: 0.9; font-size: 14px; margin-bottom: 4px; }
 
     /* Floating buttons */
-    #addAccountBtn, #notifBellBtn, #chartsBtn {
+    #menuBtn, #addAccountBtn, #notifBellBtn, #chartsBtn {
       position: fixed;
       right: 25px;
       width: 65px;
@@ -338,22 +338,30 @@
       cursor: pointer;
       display: flex; align-items: center; justify-content: center;
       box-shadow: 0 6px 22px rgba(0,0,0,0.2);
-      transition: transform 0.3s ease, box-shadow 0.3s ease;
+      transition: transform 0.28s ease, box-shadow 0.28s ease, opacity 0.28s ease, bottom 0.28s ease;
       z-index: 1000;
       color: #fff;
       font-size: 32px;
       background: linear-gradient(145deg, #43a047, #66bb6a);
     }
-    #addAccountBtn { bottom: 25px; font-size: 38px; z-index: 1000; }
-    #notifBellBtn { bottom: 115px; font-size: 30px; z-index: 1001; }
-    #chartsBtn { bottom: 205px; font-size: 28px; z-index: 1002; }
+
+    /* Menü gomb (mindig látszik) */
+    #menuBtn { bottom: 25px; font-size: 28px; z-index: 1003; }
+
+    /* Alapból a menü elemei rejtve vannak és a menü gomb helyén „ülnek” */
+    #addAccountBtn, #notifBellBtn, #chartsBtn { bottom: 25px; opacity: 0; pointer-events: none; transform: translateY(12px) scale(0.92); }
+
+    /* Menü nyitva: gombok feljönnek animációval */
+    body.menu-open #addAccountBtn { bottom: 115px; opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
+    body.menu-open #notifBellBtn  { bottom: 205px; opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
+    body.menu-open #chartsBtn     { bottom: 295px; opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
 
     #notifBellBtn.inactive {
       background: linear-gradient(145deg, #b0c4b1, #d0e6cd);
       color: #7e917c;
     }
 
-    #addAccountBtn:hover, #notifBellBtn:hover, #chartsBtn:hover {
+    #menuBtn:hover, #addAccountBtn:hover, #notifBellBtn:hover, #chartsBtn:hover {
       transform: scale(1.08);
       box-shadow: 0 8px 28px rgba(0,0,0,0.25);
     }
@@ -1208,6 +1216,22 @@ const soilRef = ref(db, `users/${uid}/devices/${deviceId}/sensorValue`);
       return enSnap.exists() ? !!enSnap.val() : false;
     }
 
+    async function loadNotifEmail(uid, deviceId) {
+      const { db, ref, get } = fb();
+      const base = `users/${uid}/devices/${deviceId}`;
+      const emSnap = await get(ref(db, `${base}/emailNotifEmail`));
+      return emSnap.exists() ? String(emSnap.val() || "").trim() : "";
+    }
+
+    async function clearNotifEmail(uid, deviceId) {
+      const { db, ref, update } = fb();
+      const base = `users/${uid}/devices/${deviceId}`;
+      await update(ref(db, base), {
+        emailNotifEmail: "",
+        emailNotifEnabled: false
+      });
+    }
+
     async function setEnabled(uid, deviceId, enabled, email) {
       const { db, ref, update } = fb();
       const base = `users/${uid}/devices/${deviceId}`;
@@ -1225,11 +1249,11 @@ const soilRef = ref(db, `users/${uid}/devices/${deviceId}/sensorValue`);
       bellBtn.classList.toggle("inactive", !anyEnabled);
     }
 
+    
     function buildNotifList() {
       const list = document.getElementById("notifDeviceList");
       if (!list) return;
 
-      // szép, pipálható lista
       list.innerHTML = "";
 
       const items = Array.from(notifState.values());
@@ -1239,7 +1263,7 @@ const soilRef = ref(db, `users/${uid}/devices/${deviceId}/sensorValue`);
       }
 
       for (const item of items) {
-        const row = document.createElement("label");
+        const row = document.createElement("div");
         row.style.display = "flex";
         row.style.alignItems = "center";
         row.style.gap = "10px";
@@ -1248,7 +1272,6 @@ const soilRef = ref(db, `users/${uid}/devices/${deviceId}/sensorValue`);
         row.style.background = "rgba(240,247,243,0.9)";
         row.style.boxShadow = "inset 0 0 0 1px rgba(0,0,0,0.04)";
         row.style.marginBottom = "10px";
-        row.style.cursor = "pointer";
 
         const cb = document.createElement("input");
         cb.type = "checkbox";
@@ -1256,33 +1279,88 @@ const soilRef = ref(db, `users/${uid}/devices/${deviceId}/sensorValue`);
         cb.style.width = "18px";
         cb.style.height = "18px";
 
-        const name = document.createElement("div");
-        name.style.fontWeight = "800";
-        name.style.color = "#0d3b23";
-        name.textContent = item.name || item.deviceId;
-
-        const small = document.createElement("div");
-        small.style.fontSize = "12px";
-        small.style.opacity = "0.7";
-        small.textContent = item.deviceId;
-
         const textWrap = document.createElement("div");
         textWrap.style.display = "flex";
         textWrap.style.flexDirection = "column";
-        textWrap.appendChild(name);
-        textWrap.appendChild(small);
+        textWrap.style.flex = "1";
+        textWrap.style.minWidth = "0";
+
+        const name = document.createElement("div");
+        name.style.fontWeight = "800";
+        name.style.color = "#0d3b23";
+        name.textContent = item.name || "Növény";
+
+        // EMAIL SOR (esp_001 helyett)
+        const emailRow = document.createElement("div");
+        emailRow.style.display = "flex";
+        emailRow.style.alignItems = "center";
+        emailRow.style.gap = "8px";
+        emailRow.style.marginTop = "2px";
+
+        const emailText = document.createElement("div");
+        emailText.style.fontSize = "12px";
+        emailText.style.opacity = "0.75";
+        emailText.style.whiteSpace = "nowrap";
+        emailText.style.overflow = "hidden";
+        emailText.style.textOverflow = "ellipsis";
+        emailText.textContent = item.email ? item.email : "Nincs megadott email cím";
+
+        emailRow.appendChild(emailText);
+
+        // X ikon – email törlés növényenként
+        if (item.email) {
+          const del = document.createElement("button");
+          del.type = "button";
+          del.innerHTML = "&#10006;"; // X
+          del.title = "Email törlése ennél a növénynél";
+          del.style.width = "26px";
+          del.style.height = "26px";
+          del.style.borderRadius = "10px";
+          del.style.border = "none";
+          del.style.cursor = "pointer";
+          del.style.background = "rgba(239,83,80,0.12)";
+          del.style.color = "#d32f2f";
+          del.style.fontWeight = "900";
+          del.style.display = "inline-flex";
+          del.style.alignItems = "center";
+          del.style.justifyContent = "center";
+
+          del.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            try {
+              await clearNotifEmail(item.uid, item.deviceId);
+              item.email = "";
+              item.enabled = false;
+              cb.checked = false;
+              emailText.textContent = "Nincs megadott email cím";
+              del.remove();
+              updateBellUI();
+            } catch (err) {
+              console.warn("Email törlés hiba:", err);
+              alert("Nem sikerült törölni az email címet.");
+            }
+          });
+
+          emailRow.appendChild(del);
+        }
 
         cb.addEventListener("change", () => {
           item.enabled = cb.checked;
           updateBellUI();
         });
 
+        textWrap.appendChild(name);
+        textWrap.appendChild(emailRow);
+
         row.appendChild(cb);
         row.appendChild(textWrap);
+
         list.appendChild(row);
       }
     }
 
+
+    
     async function refreshNotifStateFromFirebase() {
       // deviceCards Map: key = uid|deviceId -> { card, name, ... }
       if (!window.__deviceCardsMap) return;
@@ -1293,12 +1371,14 @@ const soilRef = ref(db, `users/${uid}/devices/${deviceId}/sensorValue`);
       for (const [key, obj] of entries) {
         const [uid, deviceId] = key.split("|");
         const enabled = await loadEnabled(uid, deviceId);
-        notifState.set(key, { uid, deviceId, name: obj.name || "", enabled });
+        const email = await loadNotifEmail(uid, deviceId);
+        notifState.set(key, { uid, deviceId, name: obj.name || "", enabled, email });
       }
 
       buildNotifList();
       updateBellUI();
     }
+
 
     function openNotifModal() {
       const m = document.getElementById("notifModal");
@@ -1316,6 +1396,35 @@ const soilRef = ref(db, `users/${uid}/devices/${deviceId}/sensorValue`);
       const cancelBtn = document.getElementById("notifCancel");
       const modal = document.getElementById("notifModal");
 
+      // Menü gomb: a jobb alsó lebegő gombok (grafikon/harang/+ ) animáltan nyílnak ki
+      const menuBtn = document.getElementById("menuBtn");
+      const addBtn = document.getElementById("addAccountBtn");
+      const bell = document.getElementById("notifBellBtn");
+      const charts = document.getElementById("chartsBtn");
+
+      function setMenuOpen(open) {
+        document.body.classList.toggle("menu-open", !!open);
+        if (menuBtn) {
+          menuBtn.innerHTML = open ? '<i class="fa-solid fa-xmark"></i>' : '<i class="fa-solid fa-bars"></i>';
+        }
+      }
+
+      if (menuBtn) {
+        setMenuOpen(false);
+        menuBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const open = !document.body.classList.contains("menu-open");
+          setMenuOpen(open);
+        });
+
+        // ha rányomsz egy gombra, csukjuk vissza a menüt
+        [addBtn, bell, charts].forEach(btn => {
+          if (!btn) return;
+          btn.addEventListener("click", () => setMenuOpen(false));
+        });
+      }
+
+
       if (bellBtn) {
         bellBtn.addEventListener("click", async () => {
           await refreshNotifStateFromFirebase();
@@ -1327,24 +1436,41 @@ const soilRef = ref(db, `users/${uid}/devices/${deviceId}/sensorValue`);
       if (cancelBtn) cancelBtn.addEventListener("click", closeNotifModal);
       if (modal) window.addEventListener("click", (e) => { if (e.target === modal) closeNotifModal(); });
 
+      
       if (saveBtn) {
         saveBtn.addEventListener("click", async () => {
-          const authEmail = (notifEmailInput && notifEmailInput.value.trim()) || ((window.__auth && window.__auth.currentUser && window.__auth.currentUser.email) ? window.__auth.currentUser.email : "");
-          // ha nincs email megadva, nem mentünk
-          if (!authEmail) {
-            alert("Jelentkezz be, hogy menteni tudd az értesítéseket!");
-            return;
-          }
+          const typedEmail = (document.getElementById("notifEmailInput") && document.getElementById("notifEmailInput").value.trim()) || "";
+
+          // Mentés logika:
+          // - A checkbox (enabled) állapotot MINDEN növénynél mentjük
+          // - Az EMAIL CÍMET CSAK a kipipált (enabled=true) növényekhez írjuk be, HA a mező nincs üresen.
+          const { db, ref, update } = fb();
 
           for (const item of notifState.values()) {
-            await setEnabled(item.uid, item.deviceId, item.enabled, authEmail);
+            const base = `users/${item.uid}/devices/${item.deviceId}`;
+
+            const payload = {
+              emailNotifEnabled: !!item.enabled,
+              emailNotifCooldownMs: DEFAULT_COOLDOWN_MS
+            };
+
+            if (item.enabled && typedEmail) {
+              payload.emailNotifEmail = typedEmail;
+            }
+
+            // ha kikapcsolja, nem töröljük automatikusan az emailt, csak tiltjuk
+            await update(ref(db, base), payload);
           }
+
+          // frissítjük az állapotot (emailekkel együtt), hogy a listában rögtön látszódjon
+          await refreshNotifStateFromFirebase();
 
           closeNotifModal();
           updateBellUI();
           alert("Mentve! Email értesítések beállítva.");
         });
       }
+
     });
 
     // ====== EMAIL küldés (automatán, szenzor frissítéskor) ======
@@ -1434,6 +1560,8 @@ const soilRef = ref(db, `users/${uid}/devices/${deviceId}/sensorValue`);
   <button id="chartsBtn" aria-label="Grafikonok" title="Grafikonok">
     <i class="fa-solid fa-chart-line"></i>
   </button>
+
+  <button id="menuBtn" aria-label="Menü" title="Menü"><i class="fa-solid fa-bars"></i></button>
 
   <div id="notifModal">
     <div id="notifModalContent">
