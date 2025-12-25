@@ -957,7 +957,13 @@ const soilRef = ref(db, `users/${uid}/devices/${deviceId}/sensorValue`);
         const displayPct = updateAccountGauge(currPercent, currCat);
         pushHistory(key, currPercent);
         if (window.__maybeEmailNotify) {
-          window.__maybeEmailNotify({ uid, deviceId, displayPct, plantType: currCat, displayName: titleEl.textContent });
+          window.__maybeEmailNotify({
+          uid,
+          deviceId,
+          realPct: currPercent,   // ← EZ A VALÓDI SZENZOR %
+          displayPct,
+          plantType: currCat,
+          displayName: titleEl.textContent });
         }
       });
 // Firebase: LED (csak ha van)
@@ -1489,11 +1495,19 @@ const soilRef = ref(db, `users/${uid}/devices/${deviceId}/sensorValue`);
     }
 
     // Ezt hívjuk minden szenzor frissítésnél
-    window.__maybeEmailNotify = async function({ uid, deviceId, displayPct, plantType, displayName }) {
+    window.__maybeEmailNotify = async function({
+      uid,
+      deviceId,
+      realPct,
+      displayPct,
+      plantType,
+      displayName
+    }) {
+
       try {
         if (!uid || !deviceId) return;
-        if (!Number.isFinite(displayPct)) return;
-        if (displayPct > EMAIL_THRESHOLD) return;
+        if (!Number.isFinite(realPct)) return;
+        if (realPct > EMAIL_THRESHOLD) return;
 
         const { db, ref, get, set } = fb();
         const base = `users/${uid}/devices/${deviceId}`;
