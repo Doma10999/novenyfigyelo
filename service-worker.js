@@ -1,12 +1,13 @@
-const CACHE_NAME = "novenyfigyelo-cache-v2";
-const OFFLINE_URL = "/offline.html";
+const CACHE_NAME = "novenyfigyelo-cache-v1";
+const OFFLINE_URL = "offline.html";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) =>
       cache.addAll([
-        "/index.html",   // ⬅️ EZ A FONTOS
-        "/offline.html"
+        "index.html",
+        "offline.html",
+        "wifino.png"
       ])
     )
   );
