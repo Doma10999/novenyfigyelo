@@ -1,4 +1,4 @@
-const CACHE_NAME = "novenyfigyelo-cache-v1";
+const CACHE_NAME = "novenyfigyelo-cache-v2";
 const OFFLINE_URL = "offline.html";
 
 self.addEventListener("install", (event) => {
@@ -21,7 +21,9 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(event.request).catch(() =>
-      caches.match(OFFLINE_URL)
+      caches.match(event.request).then((res) =>
+        res || caches.match(OFFLINE_URL)
+      )
     )
   );
 });
