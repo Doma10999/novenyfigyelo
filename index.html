@@ -2,7 +2,8 @@
 <html lang="hu">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Növényfigyelő</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
 
@@ -17,17 +18,24 @@
       overflow-x: hidden;
       color: #1b3a2a;
       text-align: center;
-      padding: 20px;
+
+      padding-left: 20px;
+      padding-right: 20px;
+
+      /* ⬇ SAFE AREA KOMPENZÁCIÓ */
+      padding-top: calc(env(safe-area-inset-top) + 16px);
+      padding-bottom: calc(env(safe-area-inset-bottom) + 20px);
     }
+
+
 
     h1 {
       text-align: center;
-      font-size: 2.8em;
-      margin: 25px 0;
+      font-size: clamp(2.1em, 6vw, 2.6em);
+      margin: 18px 0 22px;
       color: #0d3b23;
-      letter-spacing: 1px;
-      text-shadow: 1px 1px 5px rgba(0,0,0,0.05);
     }
+
 
     .card {
       position: relative;
@@ -308,6 +316,9 @@
       box-shadow:0 6px 14px rgba(0,0,0,.07);
     }
 
+    #plantData {
+      margin-top: 10vh;
+    }
 
 
 
@@ -346,15 +357,52 @@
     }
 
     /* Menü gomb (mindig látszik) */
-    #menuBtn { bottom: 25px; font-size: 28px; z-index: 1003; }
+    #menuBtn {
+      bottom: calc(25px + env(safe-area-inset-bottom));
+      font-size: 28px;
+      z-index: 1003;
+    }
 
-    /* Alapból a menü elemei rejtve vannak és a menü gomb helyén „ülnek” */
-    #addAccountBtn, #notifBellBtn, #chartsBtn { bottom: 25px; opacity: 0; pointer-events: none; transform: translateY(12px) scale(0.92); }
 
-    /* Menü nyitva: gombok feljönnek animációval */
-    body.menu-open #addAccountBtn { bottom: 115px; opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
-    body.menu-open #notifBellBtn  { bottom: 205px; opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
-    body.menu-open #chartsBtn     { bottom: 295px; opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
+    /* 🔹 KÖZÖS ALAP POZÍCIÓ */
+    #menuBtn,
+    #addAccountBtn,
+    #notifBellBtn,
+    #chartsBtn {
+      position: fixed;
+      right: 25px;
+      bottom: calc(25px + env(safe-area-inset-bottom));
+    }
+
+    /* 🔹 ALAPÁLLAPOT (rejtve) */
+    #addAccountBtn,
+    #notifBellBtn,
+    #chartsBtn {
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(0) scale(0.9);
+      transition: transform 0.28s ease, opacity 0.28s ease;
+    }
+
+    /* 🔹 NYITOTT MENÜ – CSAK TRANSFORM */
+    body.menu-open #addAccountBtn {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(-90px) scale(1);
+    }
+
+    body.menu-open #notifBellBtn {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(-170px) scale(1);
+    }
+
+    body.menu-open #chartsBtn {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(-250px) scale(1);
+    }
+
 
     #notifBellBtn.inactive {
       background: linear-gradient(145deg, #b0c4b1, #d0e6cd);
@@ -442,11 +490,12 @@
 
     canvas {
       width: 100%;
-      height: 160px;
-      background: rgba(255,255,255,0.8);
-      border-radius: 16px;
-      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05);
+      height: 140px;
+      background: #ffffff;
+      border-radius: 14px;
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.04);
     }
+
     
 
     /* Confirm buttons */
@@ -603,10 +652,45 @@
     function pushHistory(key, value) {
       const obj = deviceCards.get(key);
       if (!obj) return;
-      const now = Date.now();
-      obj.lastUpdated = now;
-      obj.history.push({ t: now, v: value });
-      if (obj.history.length > 60) obj.history.shift(); // kb 60 pont
+
+      const now = new Date();
+      const hour = now.getHours();
+
+      // 🔹 csak napi 2 mérés: délelőtt és délután
+      const isMorning = hour >= 6 && hour <= 11;
+      const isAfternoon = hour >= 15 && hour <= 20;
+
+      if (!isMorning && !isAfternoon) return;
+
+      // 🔹 ne mentsünk duplán ugyanarra a napszakra
+      const last = obj.history[obj.history.length - 1];
+      if (last) {
+        const lastDate = new Date(last.t);
+
+        const sameDay =
+          lastDate.getFullYear() === now.getFullYear() &&
+          lastDate.getMonth() === now.getMonth() &&
+          lastDate.getDate() === now.getDate();
+
+        const lastHour = lastDate.getHours();
+        const samePeriod =
+          (lastHour >= 6 && lastHour <= 11 && isMorning) ||
+          (lastHour >= 15 && lastHour <= 20 && isAfternoon);
+
+        if (sameDay && samePeriod) return;
+      }
+
+      // 🔹 mentés
+      obj.history.push({
+        t: now.getTime(),
+        v: value
+      });
+
+      // 🔹 csak az utolsó 5 nap maradjon (max ~10 adat)
+      const fiveDaysAgo = now.getTime() - 5 * 24 * 60 * 60 * 1000;
+      obj.history = obj.history.filter(p => p.t >= fiveDaysAgo);
+
+      obj.lastUpdated = now.getTime();
     }
 
     function drawSimpleLineChart(canvas, history) {
@@ -614,71 +698,68 @@
       const w = canvas.width;
       const h = canvas.height;
 
-      // háttér
-      ctx.clearRect(0,0,w,h);
-      ctx.fillStyle = "rgba(255,255,255,0.0)";
-      ctx.fillRect(0,0,w,h);
+      ctx.clearRect(0, 0, w, h);
 
-      // rács
-      ctx.strokeStyle = "rgba(0,0,0,0.06)";
-      ctx.lineWidth = 1;
-      for (let i=1;i<=4;i++){
-        const y = (h/5)*i;
-        ctx.beginPath();
-        ctx.moveTo(0,y);
-        ctx.lineTo(w,y);
-        ctx.stroke();
-      }
-
-      if (!history || history.length < 2) {
-        ctx.fillStyle = "rgba(13,59,35,0.6)";
-        ctx.font = "14px Roboto, Arial";
-        ctx.fillText("Nincs elég adat a grafikonhoz (várj pár frissítést).", 12, 28);
+      if (!history || history.length === 0) {
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.font = "14px Roboto";
+        ctx.fillText("Nincs adat", 12, 24);
         return;
       }
 
-      const values = history.map(p => p.v);
-      const minV = Math.min(...values, 0);
-      const maxV = Math.max(...values, 100);
-      const pad = 12;
+      // 🔹 csak az utolsó 10 mérés (5 nap × délelőtt+délután)
+      const data = history.slice(-10);
+      const barCount = data.length;
 
-      const xStep = (w - pad*2) / (history.length - 1);
+      const paddingTop = 22;
+      const paddingBottom = 28; // ⬅ HELY AZ ALSÓ % FELIRATNAK
+      const paddingX = 18;
+      const gap = 16;
 
-      function yFromVal(v) {
-        const norm = (v - minV) / (maxV - minV || 1);
-        return h - pad - norm * (h - pad*2);
-      }
+      const usableHeight = h - paddingTop - paddingBottom;
+      const barWidth = (w - paddingX * 2 - gap * (barCount - 1)) / barCount;
 
-      // vonal
-      ctx.strokeStyle = "rgba(67,160,71,0.95)";
-      ctx.lineWidth = 3;
-      ctx.lineJoin = "round";
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      for (let i=0;i<history.length;i++){
-        const x = pad + i * xStep;
-        const y = yFromVal(history[i].v);
-        if (i===0) ctx.moveTo(x,y);
-        else ctx.lineTo(x,y);
-      }
-      ctx.stroke();
+      data.forEach((p, i) => {
+        const value = Math.max(0, Math.min(100, p.v));
+        const barHeight = (value / 100) * usableHeight;
 
-      // pontok
-      ctx.fillStyle = "rgba(13,59,35,0.75)";
-      for (let i=0;i<history.length;i+=Math.ceil(history.length/10)){
-        const x = pad + i * xStep;
-        const y = yFromVal(history[i].v);
+        const x = paddingX + i * (barWidth + gap);
+        const y = paddingTop + (usableHeight - barHeight);
+
+        // 🔹 szín logika
+        let color = "#66bb6a";
+        if (value < 30) color = "#ef5350";
+        else if (value < 50) color = "#ffa726";
+
+        ctx.fillStyle = color;
+
+        // 🔹 lekerekített oszlop
+        const r = 6;
         ctx.beginPath();
-        ctx.arc(x,y,3.5,0,Math.PI*2);
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + barWidth - r, y);
+        ctx.quadraticCurveTo(x + barWidth, y, x + barWidth, y + r);
+        ctx.lineTo(x + barWidth, y + barHeight);
+        ctx.lineTo(x, y + barHeight);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
         ctx.fill();
-      }
 
-      // utolsó érték
-      const last = history[history.length-1].v;
-      ctx.fillStyle = "rgba(13,59,35,0.75)";
-      ctx.font = "700 14px Roboto, Arial";
-      ctx.fillText("Utolsó: " + last + "%", 12, 20);
+        // 🔹 % FELIRAT AZ OSZLOP ALÁ
+        ctx.fillStyle = "rgba(0,0,0,0.75)";
+        ctx.font = "800 13px Roboto";
+        ctx.textAlign = "center";
+        ctx.fillText(
+          `${value}%`,
+          x + barWidth / 2,
+          h - 8
+        );
+      });
+
+      
     }
+
+
 
     function rebuildChartsModal() {
       chartsWrap.innerHTML = "";
@@ -946,25 +1027,54 @@
       });
 
      // Firebase: soil sensor + EMAIL riasztás
-const soilRef = ref(db, `users/${uid}/devices/${deviceId}/sensorValue`);
-      onValue(soilRef, async (snap) => {
-        if (!snap.exists()) return;
+    const soilRef = ref(db, `users/${uid}/devices/${deviceId}/sensorValue`);
+          onValue(soilRef, async (snap) => {
+            if (!snap.exists()) return;
 
-        const v = Number(snap.val());
-        if (!Number.isFinite(v)) return;
+            const v = Number(snap.val());
+            if (!Number.isFinite(v)) return;
 
-        currPercent = v;
-        const displayPct = updateAccountGauge(currPercent, currCat);
-        pushHistory(key, currPercent);
-        if (window.__maybeEmailNotify) {
-          window.__maybeEmailNotify({
-          uid,
-          deviceId,
-          realPct: currPercent,   // ← EZ A VALÓDI SZENZOR %
-          displayPct,
-          plantType: currCat,
-          displayName: titleEl.textContent });
-        }
+            currPercent = v;
+            const displayPct = updateAccountGauge(currPercent, currCat);
+            pushHistory(key, displayPct);
+
+            const historyRef = ref(db, `users/${uid}/devices/${deviceId}/history`);
+
+    // 1️⃣ lekérjük az aktuális history-t
+    const snapHist = await get(historyRef);
+
+    let entries = [];
+    if (snapHist.exists()) {
+      entries = Object.entries(snapHist.val())
+        .map(([t, val]) => ({ t: Number(t), v: Number(val) }))
+        .filter(p => Number.isFinite(p.v))
+        .sort((a, b) => a.t - b.t);
+    }
+
+    // 2️⃣ új adat hozzáadása
+    entries.push({ t: Date.now(), v: displayPct });
+
+    // 3️⃣ csak a legfrissebb 10 marad
+    entries = entries.slice(-10);
+
+    // 4️⃣ TELJES history felülírása → régi adatok TÖRLŐDNEK
+    const newHistory = {};
+    for (const e of entries) {
+      newHistory[e.t] = e.v;
+    }
+
+    await set(historyRef, newHistory);
+
+
+        //if (window.__maybeEmailNotify) {
+          //window.__maybeEmailNotify({
+          //uid,
+          //deviceId,
+          //realPct: currPercent,   // ← EZ A VALÓDI SZENZOR %   ❌ NINCS AZONNALI EMAIL
+          //displayPct,
+          //plantType: currCat,
+          //displayName: titleEl.textContent });
+        //}
       });
 // Firebase: LED (csak ha van)
       const ledLevelRef = ref(db, `users/${uid}/devices/${deviceId}/ledLevel`);
@@ -1005,6 +1115,25 @@ const soilRef = ref(db, `users/${uid}/devices/${deviceId}/sensorValue`);
           batteryImg.src = `batteryPercent/${icon}`;
         });
       });
+
+      // 🔹 HISTORY betöltése Firebase-ből (grafikonhoz)
+      const historyRef = ref(db, `users/${uid}/devices/${deviceId}/history`);
+      get(historyRef).then(snap => {
+        if (!snap.exists()) return;
+
+        const obj = deviceCards.get(key);
+        if (!obj) return;
+
+        const entries = Object.entries(snap.val())
+          .map(([t, v]) => ({ t: Number(t), v: Number(v) }))
+          .filter(p => Number.isFinite(p.v))
+          .sort((a,b) => a.t - b.t)
+          .slice(-10); // ✅ CSAK A LEGFRISSEBB 10
+
+        obj.history = entries;
+        obj.lastUpdated = entries.at(-1)?.t || 0;
+      });
+
 
       // tároljuk
       deviceCards.set(key, {
@@ -1710,5 +1839,12 @@ const soilRef = ref(db, `users/${uid}/devices/${deviceId}/sensorValue`);
       </div>
     </div>
   </div>
+
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/service-worker.js");
+    }
+  </script>
+
 </body>
 </html>
