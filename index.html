@@ -512,6 +512,122 @@
       #chartsBtn { font-size: 20px; }
       #notifBellBtn { font-size: 20px; }
     }
+
+    .plant-select {
+      background: #f0f7f3;
+      border-radius: 16px;
+      padding: 14px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05);
+    }
+
+    .plant-select-arrow {
+      opacity: 0.6;
+      font-size: 18px;
+    }
+
+    #plantTypeModal .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1200;
+    }
+
+    #plantTypeModal .modal-box {
+      margin-top: env(safe-area-inset-top);
+      position: relative; /* 🔑 EZ A KULCS */
+      background: #fff;
+      border-radius: 22px;
+      padding: 18px;
+      width: 90%;
+      max-width: 340px;
+    }
+
+
+    .plant-option {
+      padding: 14px;
+      border-radius: 14px;
+      background: #f0f7f3;
+      margin-bottom: 10px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .plant-option:hover {
+      background: #dceee4;
+    }
+
+    /* Plant type modal close (X) */
+    #plantTypeModal .modal-close {
+      position: absolute;
+      top: 14px;
+      right: 16px;
+      font-size: 26px;
+      color: #999;
+      cursor: pointer;
+      user-select: none;
+      transition: color 0.2s ease, transform 0.15s ease;
+    }
+
+    #plantTypeModal .modal-close:hover {
+      color: #111;
+      transform: scale(1.1);
+    }
+
+    /* ✅ Plant type modal – X gomb ugyanúgy, mint a kártyákon */
+    #plantTypeModal .modal-box {
+      position: relative;
+    }
+
+    #plantTypeModal .modal-close-btn {
+      position: absolute;
+
+      /* ⬆⬅ finomhangolt pozíció */
+      top: calc(0px + env(safe-area-inset-top));
+      right: 10px;
+
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+
+      background: #fff;
+      border: none;
+
+      color: #d32f2f;
+      font-size: 22px;
+      font-weight: 900;
+
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      cursor: pointer;
+      box-shadow:
+        0 2px 10px rgba(220,0,60,0.10),
+        0 1.5px 4px rgba(0,0,0,0.09);
+
+      transition: background 0.2s ease,
+                  transform 0.15s ease,
+                  box-shadow 0.2s ease;
+
+      z-index: 10;
+    }
+
+
+    #plantTypeModal .modal-close-btn:hover {
+      background: #ffe3e3;
+      transform: scale(1.12);
+      box-shadow: 0 6px 16px rgba(220,0,60,0.18);
+    }
+
+
   </style>
 
   <script type="module">
@@ -867,12 +983,14 @@
           <div class="slider-labels"><span>Fény erő</span></div>
         </div>
 
-        <div style="margin-top:16px; margin-bottom:6px; position:relative; z-index:2;">
-          <label for="${selectId}" style="font-weight:700; color:#1b3a2a; margin-bottom:6px; display:block;">Növény típusa:</label>
-          <select id="${selectId}" class="plant-type-select" style="position:relative; z-index:2;">
-            <option value="">Válassz kategóriát</option>
-            ${plantTypes.map(t => `<option value="${t}">${t}</option>`).join("")}
-          </select>
+        <div style="margin-top:16px; position:relative; z-index:2;">
+          <div class="plant-select" data-uid="${uid}" data-device="${deviceId}">
+            <span class="plant-select-value">Válassz kategóriát</span>
+            <span class="plant-select-arrow">▾</span>
+          </div>
+        </div>
+
+
         </div>
       `;
 
@@ -902,6 +1020,18 @@
 
       let currPercent = 0;
       let currCat = "";
+      const plantTypeRef = ref(db, `users/${uid}/devices/${deviceId}/plantType`);
+      const plantSelectValueEl = card.querySelector(".plant-select-value");
+
+      onValue(plantTypeRef, (snap) => {
+        const v = snap.exists() ? String(snap.val() || "") : "";
+        if (v) {
+          currCat = v;
+          plantSelectValueEl.textContent = v;
+          updateAccountGauge(currPercent, currCat);
+        }
+      });
+
 
       function updateAccountGauge(realPercent, cat) {
         // visszaadjuk a kijelzett %-ot is
@@ -932,7 +1062,7 @@
       // kiválasztás (push-hoz)
       card.addEventListener("click", (e) => {
         // ha törlés / gomb nyomás -> ne ütközzön
-        if (e.target.closest(".deleteBtn") || e.target.closest(".edit-pill") || e.target.closest(".name-edit-wrap") || e.target.closest("select") || e.target.closest("input") ) return;
+        if (e.target.closest(".deleteBtn") || e.target.closest(".edit-pill") || e.target.closest(".name-edit-wrap") || e.target.closest("select") || e.target.closest("input") || e.target.closest(".plant-select") ) return;
         window.jelenlegiUID = uid;
         window.jelenlegiEmail = email;
         setSelectedDevice(deviceId);
@@ -1007,24 +1137,7 @@
         if (obj) obj.name = v ? v : name;
       });
 
-      // Firebase: plantType
-      const selectElem = card.querySelector(`#${selectId}`);
-      const plantTypeRef = ref(db, `users/${uid}/devices/${deviceId}/plantType`);
-      onValue(plantTypeRef, (snap) => {
-        const v = snap.exists() ? String(snap.val() || "") : "";
-        if (v) {
-          currCat = v;
-          selectElem.value = v;
-          updateAccountGauge(currPercent, currCat);
-        }
-      });
-      selectElem.addEventListener("change", async (e)=> {
-        e.stopPropagation();
-        const v = e.target.value;
-        currCat = v;
-        updateAccountGauge(currPercent, currCat);
-        await set(plantTypeRef, v);
-      });
+      
 
      // Firebase: soil sensor + EMAIL riasztás
     const soilRef = ref(db, `users/${uid}/devices/${deviceId}/sensorValue`);
@@ -1738,7 +1851,12 @@
         console.warn("maybeEmailNotify hiba:", e);
       }
     };
+
+    
   </script>
+
+  
+
 
 </head>
 
@@ -1845,6 +1963,94 @@
       navigator.serviceWorker.register("service-worker.js");
     }
   </script>
+
+  <div id="plantTypeModal" style="display:none;">
+    <div class="modal">
+      <div class="modal-box">
+        <button class="modal-close-btn" id="plantTypeClose" aria-label="Bezárás">✖</button>
+        <h3>Válassz kategóriát</h3>
+
+        <div class="plant-option" data-value="🌵Szárazkedvelő">🌵 Szárazkedvelő</div>
+        <div class="plant-option" data-value="🌾Mérsékelten száraz">🌾 Mérsékelten száraz</div>
+        <div class="plant-option" data-value="🌿Kiegyensúlyozott vízigényű">🌿 Kiegyensúlyozott vízigényű</div>
+        <div class="plant-option" data-value="🌱Nedvességkedvelő">🌱 Nedvességkedvelő</div>
+        <div class="plant-option" data-value="💧Vízigényes">💧 Vízigényes</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  document.addEventListener("DOMContentLoaded", () => {
+
+    let currentSelectUID = null;
+    let currentSelectDevice = null;
+    let currentSelectEl = null;
+
+    const plantTypeModal = document.getElementById("plantTypeModal");
+    const plantTypeClose = document.getElementById("plantTypeClose");
+
+    // 🔹 Megnyitás
+    document.addEventListener("click", (e) => {
+      const sel = e.target.closest(".plant-select");
+      if (!sel) return;
+
+      e.stopPropagation();
+
+      currentSelectUID = sel.dataset.uid;
+      currentSelectDevice = sel.dataset.device;
+      currentSelectEl = sel.querySelector(".plant-select-value");
+
+      plantTypeModal.style.display = "flex";
+    });
+
+    // 🔹 Kategória kiválasztása
+    document.querySelectorAll(".plant-option").forEach(opt => {
+      opt.addEventListener("click", async (e) => {
+        e.stopPropagation();
+
+        if (!currentSelectUID || !currentSelectDevice || !currentSelectEl) return;
+
+        const value = opt.dataset.value;
+        currentSelectEl.textContent = value;
+
+        await window.__set(
+          window.__ref(
+            window.__db,
+            `users/${currentSelectUID}/devices/${currentSelectDevice}/plantType`
+          ),
+          value
+        );
+
+        plantTypeModal.style.display = "none";
+      });
+    });
+
+    // 🔹 X gomb
+    plantTypeClose.addEventListener("click", (e) => {
+      e.stopPropagation();
+      plantTypeModal.style.display = "none";
+    });
+
+    // 🔹 Háttér katt
+    const plantTypeBackdrop = document.querySelector("#plantTypeModal .modal");
+
+    plantTypeBackdrop.addEventListener("click", () => {
+      plantTypeModal.style.display = "none";
+    });
+
+
+    // 🔹 ESC
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && plantTypeModal.style.display === "flex") {
+        plantTypeModal.style.display = "none";
+      }
+    });
+
+  });
+  </script>
+
+
+
 
 </body>
 </html>
