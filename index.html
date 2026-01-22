@@ -84,7 +84,7 @@
       100% { transform: translateY(0) rotate(360deg); }
     }
 
-    .card:hover { transform: translateY(-6px); box-shadow: 0 28px 48px rgba(0,0,0,0.15); }
+    .card:hover { transform: translateY(-7px); box-shadow: 0 28px 48px rgba(0,0,0,0.15); }
 
     input, select, button {
       width: 100%;
@@ -490,9 +490,9 @@
 
     canvas {
       width: 100%;
-      height: 140px;
+      height: 160px;
       background: #ffffff;
-      border-radius: 14px;
+      border-radius: 18px;
       box-shadow: inset 0 0 0 1px rgba(0,0,0,0.04);
     }
 
@@ -823,8 +823,8 @@
         return;
       }
 
-      // 🔹 csak az utolsó 10 mérés (5 nap × délelőtt+délután)
-      const data = history.slice(-10);
+      // 🔹 csak az utolsó 7 mérés (5 nap × délelőtt+délután)
+      const data = history.slice(-7);
       const barCount = data.length;
 
       const paddingTop = 22;
@@ -863,7 +863,7 @@
 
         // 🔹 % FELIRAT AZ OSZLOP ALÁ
         ctx.fillStyle = "rgba(0,0,0,0.75)";
-        ctx.font = "800 13px Roboto";
+        ctx.font = "900 16px Roboto";
         ctx.textAlign = "center";
         ctx.fillText(
           `${value}%`,
@@ -1167,8 +1167,8 @@
     // 2️⃣ új adat hozzáadása
     entries.push({ t: Date.now(), v: displayPct });
 
-    // 3️⃣ csak a legfrissebb 10 marad
-    entries = entries.slice(-10);
+    // 3️⃣ csak a legfrissebb 7 marad
+    entries = entries.slice(-7);
 
     // 4️⃣ TELJES history felülírása → régi adatok TÖRLŐDNEK
     const newHistory = {};
@@ -1241,7 +1241,7 @@
           .map(([t, v]) => ({ t: Number(t), v: Number(v) }))
           .filter(p => Number.isFinite(p.v))
           .sort((a,b) => a.t - b.t)
-          .slice(-10); // ✅ CSAK A LEGFRISSEBB 10
+          .slice(-7); // ✅ CSAK A LEGFRISSEBB 6
 
         obj.history = entries;
         obj.lastUpdated = entries.at(-1)?.t || 0;
