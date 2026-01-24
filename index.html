@@ -296,25 +296,7 @@
       box-shadow:0 14px 26px rgba(0,0,0,0.06);
     }
 
-    .plant-title-pill{
-      display:inline-flex;
-      align-items:center;
-      gap:6px;
-      padding:4px 14px;        /* ⬅ EZ A KULCS: alacsonyabb */
-      border-radius:999px;     /* kapszula marad */
-      background:linear-gradient(
-        145deg,
-        rgba(102,187,106,0.32),
-        rgba(67,160,71,0.22)
-      );
-      font-weight:700;
-      font-size:15px;          /* picit kisebb összhatás */
-      line-height:1;           /* ⬅ fontos, ne legyen magas */
-      white-space:nowrap;
-      width:fit-content;
-      max-width:100%;
-      box-shadow:0 6px 14px rgba(0,0,0,.07);
-    }
+    
 
     #plantData {
       margin-top: 10vh;
@@ -437,10 +419,21 @@
       overflow: hidden;
     }
 
-    @keyframes popIn {
-      from { transform: scale(0.94); opacity: 0; }
-      to   { transform: scale(1); opacity: 1; }
+    @keyframes modalElastic {
+      0%   { transform: scale(0.85); opacity: 0; }
+      60%  { transform: scale(1.05); opacity: 1; }
+      100% { transform: scale(1); }
     }
+
+    #modalContent,
+    #confirmModalContent,
+    #notifModalContent,
+    #chartsModalContent,
+    #plantTypeModal .modal-box {
+      animation: modalElastic 0.45s cubic-bezier(.34,1.56,.64,1);
+    }
+
+
 
     #modalClose, #confirmClose, #notifModalClose, #chartsModalClose {
       position: absolute;
@@ -627,6 +620,43 @@
       box-shadow: 0 6px 16px rgba(220,0,60,0.18);
     }
 
+    /* ============================= */
+    /* KÁRTYA BELÉPŐ ANIMÁCIÓ */
+    /* ============================= */
+
+    .card {
+      opacity: 0;
+      transform: translateY(40px) scale(0.96);
+      animation: cardIn 0.6s cubic-bezier(.34,1.56,.64,1) forwards;
+    }
+
+    @keyframes cardIn {
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    /* ============================= */
+    /* KÁRTYA TÖRLÉS ANIMÁCIÓ */
+    /* ============================= */
+    .card.removing {
+      animation: cardOut 0.45s cubic-bezier(.4,0,.2,1) forwards;
+    }
+
+    @keyframes cardOut {
+      to {
+        opacity: 0;
+        transform: translateY(30px) scale(0.9);
+        height: 0;
+        margin: 0;
+        padding-top: 0;
+        padding-bottom: 0;
+      }
+    }
+
+
+
 
   </style>
 
@@ -810,46 +840,52 @@
     }
 
     function drawSimpleLineChart(canvas, history) {
-      const ctx = canvas.getContext("2d");
-      const w = canvas.width;
-      const h = canvas.height;
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width;
+    const h = canvas.height;
 
+    ctx.clearRect(0, 0, w, h);
+
+    if (!history || history.length === 0) {
+      ctx.fillStyle = "rgba(0,0,0,0.5)";
+      ctx.font = "14px Roboto";
+      ctx.fillText("Nincs adat", 12, 24);
+      return;
+    }
+
+    const data = history.slice(-7);
+    const barCount = data.length;
+
+    const paddingTop = 22;
+    const paddingBottom = 28;
+    const paddingX = 18;
+    const gap = 16;
+
+    const usableHeight = h - paddingTop - paddingBottom;
+    const barWidth = (w - paddingX * 2 - gap * (barCount - 1)) / barCount;
+
+    let animProgress = 0;
+
+    function animate() {
       ctx.clearRect(0, 0, w, h);
 
-      if (!history || history.length === 0) {
-        ctx.fillStyle = "rgba(0,0,0,0.5)";
-        ctx.font = "14px Roboto";
-        ctx.fillText("Nincs adat", 12, 24);
-        return;
-      }
-
-      // 🔹 csak az utolsó 7 mérés (5 nap × délelőtt+délután)
-      const data = history.slice(-7);
-      const barCount = data.length;
-
-      const paddingTop = 22;
-      const paddingBottom = 28; // ⬅ HELY AZ ALSÓ % FELIRATNAK
-      const paddingX = 18;
-      const gap = 16;
-
-      const usableHeight = h - paddingTop - paddingBottom;
-      const barWidth = (w - paddingX * 2 - gap * (barCount - 1)) / barCount;
+      animProgress += 0.03;
+      if (animProgress > 1) animProgress = 1;
 
       data.forEach((p, i) => {
         const value = Math.max(0, Math.min(100, p.v));
-        const barHeight = (value / 100) * usableHeight;
+        const targetHeight = (value / 100) * usableHeight;
+        const barHeight = targetHeight * animProgress;
 
         const x = paddingX + i * (barWidth + gap);
         const y = paddingTop + (usableHeight - barHeight);
 
-        // 🔹 szín logika
         let color = "#66bb6a";
         if (value < 30) color = "#ef5350";
         else if (value < 50) color = "#ffa726";
 
         ctx.fillStyle = color;
 
-        // 🔹 lekerekített oszlop
         const r = 6;
         ctx.beginPath();
         ctx.moveTo(x + r, y);
@@ -861,19 +897,22 @@
         ctx.quadraticCurveTo(x, y, x + r, y);
         ctx.fill();
 
-        // 🔹 % FELIRAT AZ OSZLOP ALÁ
-        ctx.fillStyle = "rgba(0,0,0,0.75)";
+        // százalék SZÍNE a sáv színe
+        ctx.fillStyle = color;
         ctx.font = "900 16px Roboto";
         ctx.textAlign = "center";
-        ctx.fillText(
-          `${value}%`,
-          x + barWidth / 2,
-          h - 8
-        );
+        ctx.fillText(`${value}%`, x + barWidth / 2, h - 8);
       });
 
-      
+      if (animProgress < 1) {
+        requestAnimationFrame(animate);
+      }
     }
+
+    animate();
+  }
+
+
 
 
 
@@ -945,6 +984,10 @@
 
       const card = document.createElement("div");
       card.className = "card";
+      // 🔹 belépő animáció késleltetés (stagger)
+      const index = accountsContainer.children.length;
+      card.style.animationDelay = `${index * 0.25}s`;
+
 
       card.innerHTML = `
         <button class="deleteBtn" aria-label="Fiók törlése">✖</button>
@@ -1117,12 +1160,17 @@
 
       // törlés (csak fiók eltávolítás logika: UID törlése localstorage-ból)
       deleteBtn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        const confirmed = await showConfirmModal("Biztosan törlöd ezt a fiókot?");
-        if (!confirmed) return;
-        // eltávolítjuk az összes ehhez az uid-hez tartozó kártyát
+      e.stopPropagation();
+      const confirmed = await showConfirmModal("Biztosan törlöd ezt a fiókot?");
+      if (!confirmed) return;
+
+      card.classList.add("removing");
+
+      setTimeout(() => {
         removeAllCardsForUid(uid);
-      });
+      }, 450);
+    });
+
 
       // Firebase: displayName
       const displayNameRef = ref(db, `users/${uid}/devices/${deviceId}/displayName`);
@@ -1149,7 +1197,6 @@
 
             currPercent = v;
             const displayPct = updateAccountGauge(currPercent, currCat);
-            pushHistory(key, displayPct);
 
             const historyRef = ref(db, `users/${uid}/devices/${deviceId}/history`);
 
@@ -1969,6 +2016,10 @@
       <div class="modal-box">
         <button class="modal-close-btn" id="plantTypeClose" aria-label="Bezárás">✖</button>
         <h3>Válassz kategóriát</h3>
+        <p style="margin:8px 0 14px; font-size:13px; opacity:.7;">
+          A kiválasztás hatással van a százalék értékelésre
+        </p>
+
 
         <div class="plant-option" data-value="🌵Szárazkedvelő">🌵 Szárazkedvelő</div>
         <div class="plant-option" data-value="🌾Mérsékelten száraz">🌾 Mérsékelten száraz</div>
