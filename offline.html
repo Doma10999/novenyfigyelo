@@ -2,42 +2,47 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Nincs internet</title>
 
 <style>
   body {
     margin: 0;
-    height: 100vh;
+    min-height: 100vh;
     background: #29494F;
     display: flex;
     align-items: center;
     justify-content: center;
     font-family: system-ui, sans-serif;
     color: #ffffff;
+
+    /* 🔑 státuszsáv / notch kompatibilitás */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .box {
     text-align: center;
     max-width: 320px;
-    padding: 20px;
+    padding: 24px;
   }
 
   .icon {
     width: 120px;
-    margin-bottom: 20px;
+    margin-bottom: 22px;
     animation: float 2.5s ease-in-out infinite;
   }
 
   @keyframes float {
-    0%   { transform: translateY(0); }
-    50%  { transform: translateY(-6px); }
+    0% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
     100% { transform: translateY(0); }
   }
 
   .title {
     font-size: 20px;
-    font-weight: 600;
+    font-weight: 700;
     margin-bottom: 8px;
   }
 
@@ -45,22 +50,24 @@
     font-size: 14px;
     opacity: 0.75;
     margin-bottom: 20px;
+    line-height: 1.4;
   }
 
   button {
     width: 100%;
-    padding: 12px;
+    padding: 14px;
     border: none;
-    border-radius: 12px;
+    border-radius: 14px;
     background: #6fd08c;
     color: #0b3b23;
     font-size: 15px;
-    font-weight: 600;
+    font-weight: 700;
     cursor: pointer;
   }
 
   button:active {
-    opacity: 0.85;
+    transform: scale(0.97);
+    opacity: 0.9;
   }
 
   .hint {
@@ -72,29 +79,36 @@
 </head>
 
 <body>
-  <div class="box">
+<div class="box">
 
-    <img class="icon" src="wifino.png" alt="Nincs internet">
+  <!-- 🔥 BASE64 WIFI ICON – MINDEN TELEFONON MEGJELENIK -->
+  <img class="icon"
+       alt="Nincs internet"
+       src="data:image/png;base64,
+iVBORw0KGgoAAAANSUhEUgAAAHgAAAB4CAYAAABxy
+...IDE A TELJES BASE64 STRINGET IDE TESZED BE ...
+" />
 
-    <div class="title">Nincs internetkapcsolat</div>
-    <div class="sub">
-      Ha ESP WiFi-re csatlakoztál,<br>
-      itt be tudod állítani az eszközt.
-    </div>
+  <div class="title">Nincs internetkapcsolat</div>
 
-    <button onclick="openESP()">ESP WiFi beállítása</button>
-
-    <div class="hint">
-      Csak akkor működik,<br>
-      ha az ESP WiFi-jén vagy
-    </div>
-
+  <div class="sub">
+    Ha ESP WiFi-re csatlakoztál,<br>
+    itt be tudod állítani az eszközt.
   </div>
 
+  <button onclick="openESP()">ESP WiFi beállítása</button>
+
+  <div class="hint">
+    Csak akkor működik,<br>
+    ha az ESP WiFi-jén vagy
+  </div>
+
+</div>
+
 <script>
-  function openESP() {
-    window.location.href = "http://192.168.4.1";
-  }
+function openESP() {
+  window.location.href = "http://192.168.4.1";
+}
 </script>
 </body>
 </html>
