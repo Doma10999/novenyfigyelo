@@ -26,6 +26,13 @@
   .icon {
     width: 120px;
     margin-bottom: 20px;
+    animation: float 2.5s ease-in-out infinite;
+  }
+
+  @keyframes float {
+    0%   { transform: translateY(0); }
+    50%  { transform: translateY(-6px); }
+    100% { transform: translateY(0); }
   }
 
   .title {
@@ -65,29 +72,29 @@
 </head>
 
 <body>
-<div class="box">
+  <div class="box">
 
-  <img class="icon" src="wifino.png" alt="Nincs internet">
+    <img class="icon" src="wifino.png" alt="Nincs internet">
 
-  <div class="title">Nincs internetkapcsolat</div>
-  <div class="sub">
-    Ha ESP WiFi-re csatlakoztál,<br>
-    itt be tudod állítani az eszközt.
+    <div class="title">Nincs internetkapcsolat</div>
+    <div class="sub">
+      Ha ESP WiFi-re csatlakoztál,<br>
+      itt be tudod állítani az eszközt.
+    </div>
+
+    <button onclick="openESP()">ESP WiFi beállítása</button>
+
+    <div class="hint">
+      Csak akkor működik,<br>
+      ha az ESP WiFi-jén vagy
+    </div>
+
   </div>
-
-  <button onclick="openESP()">ESP WiFi beállítása</button>
-
-  <div class="hint">
-    Csak akkor működik,<br>
-    ha az ESP WiFi-jén vagy
-  </div>
-
-</div>
 
 <script>
-function openESP() {
-  window.location.href = "http://192.168.4.1";
-}
+  function openESP() {
+    window.location.href = "http://192.168.4.1";
+  }
 </script>
 </body>
 </html>
