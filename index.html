@@ -597,9 +597,9 @@
     #plantTypeModal .modal-close-btn {
       position: absolute;
 
-      /* ⬆⬅ finomhangolt pozíció */
-      top: calc(0px + env(safe-area-inset-top));
-      right: 10px;
+      /* ✅ FIX POZÍCIÓ — nincs safe-area itt */
+      top: 0px;
+      right: 8px;
 
       width: 40px;
       height: 40px;
@@ -627,6 +627,7 @@
 
       z-index: 10;
     }
+
 
 
     #plantTypeModal .modal-close-btn:hover {
