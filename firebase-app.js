@@ -285,47 +285,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
       obj.lastUpdated = now.getTime();
     }
 
-    function formatLastDataChange(ts) {
-      if (!ts) return "";
-      const d = new Date(Number(ts));
-      if (Number.isNaN(d.getTime())) return "";
-
-      const now = new Date();
-      const sameDay =
-        d.getFullYear() === now.getFullYear() &&
-        d.getMonth() === now.getMonth() &&
-        d.getDate() === now.getDate();
-
-      return sameDay
-        ? d.toLocaleTimeString("hu-HU", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-        : d.toLocaleString("hu-HU", {
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit"
-          });
-    }
-
-    function upsertHistoryPoint(obj, value, timestamp) {
-      if (!obj) return false;
-      const entries = Array.isArray(obj.history) ? [...obj.history] : [];
-      const last = entries[entries.length - 1];
-      const numericValue = Number(value);
-      const ts = Number(timestamp || Date.now());
-
-      if (last && Number(last.v) === numericValue) {
-        obj.history = entries;
-        obj.lastUpdated = Number(last.t) || 0;
-        return false;
-      }
-
-      entries.push({ t: ts, v: numericValue });
-      obj.history = entries.slice(-7);
-      obj.lastUpdated = obj.history.at(-1)?.t || 0;
-      return true;
-    }
-
     function drawSimpleLineChart(canvas, history) {
     const ctx = canvas.getContext("2d");
     const w = canvas.width;
@@ -429,7 +388,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
         left.textContent = item.name || "Növény";
 
         const right = document.createElement("small");
-        right.textContent = item.lastUpdated ? formatLastDataChange(item.lastUpdated) : "";
+        right.textContent = item.lastUpdated ? new Date(item.lastUpdated).toLocaleTimeString() : "";
 
         title.appendChild(left);
         title.appendChild(right);
@@ -530,6 +489,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
           <div class="gauge-value">0%</div>
         </div>
 
+        <div class="air-quality-row" style="display:none;">
+          <div class="air-quality-pill state-none" title="Levegő minőség nincs betöltve">
+            <span class="air-quality-icon">🌬️</span>
+            <span class="air-quality-text">Levegő: nincs adat</span>
+          </div>
+        </div>
+
         <div class="slider-container" style="display:none;">
           <input type="range" min="0" max="100" step="10" value="0" class="led-slider" list="led-steps" />
           <div class="slider-labels"><span>Fény erő</span></div>
@@ -563,6 +529,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 
       const batteryBox = card.querySelector(".battery-box");
       const batteryImg = card.querySelector(".battery-icon");
+      const airRow = card.querySelector(".air-quality-row");
+      const airPill = card.querySelector(".air-quality-pill");
+      const airText = card.querySelector(".air-quality-text");
+      const airIcon = card.querySelector(".air-quality-icon");
 
       // gauge stroke
       const R = 80;
@@ -582,6 +552,42 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
       function getFallbackCategoryForUid() {
         const allowed = window.__getAllowedCategoriesForUid(uid);
         return allowed[0] || "🌿Kiegyensúlyozott vízigényű";
+      }
+
+      function setAirVisual(state, details = {}) {
+        if (!airRow || !airPill || !airText || !airIcon) return;
+
+        const norm = String(state || "").toLowerCase();
+        airRow.style.display = norm ? "flex" : "none";
+        airPill.classList.remove("state-none", "state-good", "state-medium", "state-bad");
+
+        let label = "Levegő: nincs adat";
+        let icon = "🌬️";
+        let cls = "state-none";
+
+        if (norm === "jo") {
+          label = "Levegő: Jó";
+          icon = "🌿";
+          cls = "state-good";
+        } else if (norm === "kozepes") {
+          label = "Levegő: Közepes";
+          icon = "😐";
+          cls = "state-medium";
+        } else if (norm === "rossz") {
+          label = "Levegő: Rossz";
+          icon = "⚠️";
+          cls = "state-bad";
+        }
+
+        airPill.classList.add(cls);
+        airIcon.textContent = icon;
+        airText.textContent = label;
+
+        const parts = [];
+        if (Number.isFinite(details.aqi)) parts.push(`AQI: ${details.aqi}`);
+        if (Number.isFinite(details.tvoc)) parts.push(`TVOC: ${details.tvoc}`);
+        if (Number.isFinite(details.eco2)) parts.push(`eCO2: ${details.eco2}`);
+        airPill.title = parts.length ? parts.join(" | ") : label;
       }
 
       function refreshPlanBadgeAndRestrictions() {
@@ -744,14 +750,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             try {
               const cacheKey = `plant_${uid}_${deviceId}`;
 
-              const cardObj = deviceCards.get(uid + "|" + deviceId);
               const cacheData = {
                 sensorValue: currPercent,
                 displayValue: displayPct,
                 category: currCat || "",
                 name: titleEl.textContent || "",
-                history: (cardObj?.history) || [],
-                lastUpdated: cardObj?.lastUpdated || 0
+                history: (deviceCards.get(uid + "|" + deviceId)?.history) || [],
+                lastUpdated: Date.now()
               };
 
               localStorage.setItem(cacheKey, JSON.stringify(cacheData));
@@ -770,29 +775,23 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
         entries = Object.entries(snapHist.val())
           .map(([t, val]) => ({ t: Number(t), v: Number(val) }))
           .filter(p => Number.isFinite(p.v))
-          .sort((a, b) => a.t - b.t)
-          .slice(-7);
+          .sort((a, b) => a.t - b.t);
       }
 
-      const last = entries[entries.length - 1];
-      const valueChanged = !last || Number(last.v) !== Number(displayPct);
+      entries.push({ t: Date.now(), v: displayPct });
+      entries = entries.slice(-7);
 
-      if (valueChanged) {
-        entries.push({ t: Date.now(), v: displayPct });
-        entries = entries.slice(-7);
-
-        const newHistory = {};
-        for (const e of entries) {
-          newHistory[e.t] = e.v;
-        }
-
-        await set(historyRef, newHistory);
+      const newHistory = {};
+      for (const e of entries) {
+        newHistory[e.t] = e.v;
       }
+
+      await set(historyRef, newHistory);
 
       const obj = deviceCards.get(uid + "|" + deviceId);
       if (obj) {
         obj.history = entries;
-        obj.lastUpdated = entries.at(-1)?.t || 0;
+        obj.lastUpdated = entries.at(-1)?.t || Date.now();
       }
     } else {
       const obj = deviceCards.get(uid + "|" + deviceId);
@@ -854,6 +853,52 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
         });
       });
 
+      // Firebase: levegő minőség (csak ha van ilyen szenzor)
+      const airStateRef = ref(db, `users/${uid}/devices/${deviceId}/airState`);
+      const airAqiRef = ref(db, `users/${uid}/devices/${deviceId}/airQualityIndex`);
+      const airTvocRef = ref(db, `users/${uid}/devices/${deviceId}/tvoc`);
+      const airEco2Ref = ref(db, `users/${uid}/devices/${deviceId}/eco2`);
+
+      let airDetails = { aqi: NaN, tvoc: NaN, eco2: NaN };
+      let currentAirState = "";
+
+      onValue(airAqiRef, (snap) => {
+        airDetails.aqi = snap.exists() ? Number(snap.val()) : NaN;
+        if (currentAirState) setAirVisual(currentAirState, airDetails);
+      });
+      onValue(airTvocRef, (snap) => {
+        airDetails.tvoc = snap.exists() ? Number(snap.val()) : NaN;
+        if (currentAirState) setAirVisual(currentAirState, airDetails);
+      });
+      onValue(airEco2Ref, (snap) => {
+        airDetails.eco2 = snap.exists() ? Number(snap.val()) : NaN;
+        if (currentAirState) setAirVisual(currentAirState, airDetails);
+      });
+
+      onValue(airStateRef, async (snap) => {
+        if (!snap.exists()) {
+          airRow.style.display = "none";
+          return;
+        }
+
+        const state = String(snap.val() || "").trim().toLowerCase();
+        currentAirState = state;
+        setAirVisual(state, airDetails);
+
+        if (state === "rossz" && window.__maybeAirNotify) {
+          window.__maybeAirNotify({
+            uid,
+            deviceId,
+            plantType: currCat,
+            displayName: titleEl.textContent,
+            aqi: Number.isFinite(airDetails.aqi) ? airDetails.aqi : undefined,
+            tvoc: Number.isFinite(airDetails.tvoc) ? airDetails.tvoc : undefined,
+            eco2: Number.isFinite(airDetails.eco2) ? airDetails.eco2 : undefined,
+            airState: state
+          });
+        }
+      });
+
       // 🔹 HISTORY betöltése Firebase-ből (grafikonhoz) – csak Plusnál
       if (window.__isPlusForUid(uid)) {
         const historyRef = ref(db, `users/${uid}/devices/${deviceId}/history`);
@@ -881,6 +926,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
         uid,
         deviceId,
         name: email,
+        accountEmail: email,
         history: [],
         lastUpdated: 0
       });
@@ -915,7 +961,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             const obj = deviceCards.get(key);
             if (obj) {
               obj.history = data.history;
-              obj.lastUpdated = data.lastUpdated || 0;
+              obj.lastUpdated = data.lastUpdated || Date.now();
             }
           }
         }
