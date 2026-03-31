@@ -473,32 +473,50 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
           </div>
         </div>
 
-
         <div class="name-edit-wrap">
           <input type="text" class="name-input" maxlength="50" placeholder="Növény neve...">
           <button class="icon-btn ok-btn" type="button" aria-label="Mentés"><i class="fa-solid fa-check"></i></button>
           <button class="icon-btn cancel-btn" type="button" aria-label="Mégse"><i class="fa-solid fa-xmark"></i></button>
         </div>
 
+        <div class="card-pages-viewport">
+          <div class="card-pages-track">
+            <section class="card-page page-soil is-active">
+              <div class="gauge-container">
+                <svg class="gauge-svg" width="200" height="200" viewBox="0 0 200 200">
+                  <circle class="gauge-bg" cx="100" cy="100" r="80"></circle>
+                  <circle class="gauge-fill" cx="100" cy="100" r="80"></circle>
+                </svg>
+                <div class="gauge-value">0%</div>
+              </div>
 
-        <div class="gauge-container">
-          <svg class="gauge-svg" width="200" height="200" viewBox="0 0 200 200">
-            <circle class="gauge-bg" cx="100" cy="100" r="80"></circle>
-            <circle class="gauge-fill" cx="100" cy="100" r="80"></circle>
-          </svg>
-          <div class="gauge-value">0%</div>
-        </div>
+              <div class="slider-container" style="display:none;">
+                <input type="range" min="0" max="100" step="10" value="0" class="led-slider" list="led-steps" />
+                <div class="slider-labels"><span>Fény erő</span></div>
+              </div>
+            </section>
 
-        <div class="air-quality-row" style="display:none;">
-          <div class="air-quality-pill state-none" title="Levegő minőség nincs betöltve">
-            <span class="air-quality-icon">🌬️</span>
-            <span class="air-quality-text">Levegő: nincs adat</span>
+            <section class="card-page page-air" aria-hidden="true">
+              <div class="air-slide-wrap">
+                <div class="air-gauge-shell state-none">
+                  <div class="air-gauge-core">
+                    <div class="air-gauge-label">Levegő</div>
+                    <div class="air-gauge-value">Nincs adat</div>
+                  </div>
+                </div>
+                <div class="air-metrics">
+                  <span class="air-metric air-aqi">AQI: —</span>
+                  <span class="air-metric air-tvoc">TVOC: —</span>
+                  <span class="air-metric air-eco2">eCO2: —</span>
+                </div>
+              </div>
+            </section>
           </div>
         </div>
 
-        <div class="slider-container" style="display:none;">
-          <input type="range" min="0" max="100" step="10" value="0" class="led-slider" list="led-steps" />
-          <div class="slider-labels"><span>Fény erő</span></div>
+        <div class="card-dots" style="display:none;">
+          <button class="card-dot is-active" type="button" aria-label="Talaj oldal"></button>
+          <button class="card-dot" type="button" aria-label="Levegő oldal"></button>
         </div>
 
         <div style="margin-top:16px; position:relative; z-index:2;">
@@ -506,9 +524,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             <span class="plant-select-value">Válassz kategóriát</span>
             <span class="plant-select-arrow">▾</span>
           </div>
-        </div>
-
-
         </div>
       `;
 
@@ -529,10 +544,16 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 
       const batteryBox = card.querySelector(".battery-box");
       const batteryImg = card.querySelector(".battery-icon");
-      const airRow = card.querySelector(".air-quality-row");
-      const airPill = card.querySelector(".air-quality-pill");
-      const airText = card.querySelector(".air-quality-text");
-      const airIcon = card.querySelector(".air-quality-icon");
+      const pagesViewport = card.querySelector(".card-pages-viewport");
+      const pagesTrack = card.querySelector(".card-pages-track");
+      const cardDots = card.querySelector(".card-dots");
+      const dotButtons = Array.from(card.querySelectorAll(".card-dot"));
+      const airPage = card.querySelector(".page-air");
+      const airGaugeShell = card.querySelector(".air-gauge-shell");
+      const airGaugeValue = card.querySelector(".air-gauge-value");
+      const airAqiEl = card.querySelector(".air-aqi");
+      const airTvocEl = card.querySelector(".air-tvoc");
+      const airEco2El = card.querySelector(".air-eco2");
 
       // gauge stroke
       const R = 80;
@@ -554,41 +575,78 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
         return allowed[0] || "🌿Kiegyensúlyozott vízigényű";
       }
 
+      let currentCardPage = 0;
+      let hasAirPage = false;
+      let touchStartX = null;
+
+      function setCardPage(pageIndex) {
+        const targetPage = (!hasAirPage) ? 0 : Math.max(0, Math.min(1, pageIndex));
+        currentCardPage = targetPage;
+        if (pagesTrack) pagesTrack.style.transform = `translateX(-${targetPage * 50}%)`;
+        if (airPage) airPage.setAttribute("aria-hidden", targetPage === 0 ? "true" : "false");
+        dotButtons.forEach((btn, i) => btn.classList.toggle("is-active", i === targetPage));
+      }
+
+      dotButtons.forEach((btn, i) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (!hasAirPage && i === 1) return;
+          setCardPage(i);
+        });
+      });
+
+      if (pagesViewport) {
+        pagesViewport.addEventListener("touchstart", (e) => {
+          if (!hasAirPage || !e.touches || !e.touches.length) return;
+          touchStartX = e.touches[0].clientX;
+        }, { passive: true });
+
+        pagesViewport.addEventListener("touchend", (e) => {
+          if (!hasAirPage || touchStartX == null || !e.changedTouches || !e.changedTouches.length) return;
+          const dx = e.changedTouches[0].clientX - touchStartX;
+          if (Math.abs(dx) > 35) {
+            setCardPage(dx < 0 ? 1 : 0);
+          }
+          touchStartX = null;
+        }, { passive: true });
+      }
+
       function setAirVisual(state, details = {}) {
-        if (!airRow || !airPill || !airText || !airIcon) return;
+        if (!airPage || !airGaugeShell || !airGaugeValue) return;
 
         const norm = String(state || "").toLowerCase();
-        airRow.style.display = norm ? "flex" : "none";
-        airPill.classList.remove("state-none", "state-good", "state-medium", "state-bad");
+        hasAirPage = !!norm;
+        cardDots.style.display = hasAirPage ? "flex" : "none";
+        airPage.style.display = hasAirPage ? "flex" : "none";
+        if (!hasAirPage) {
+          setCardPage(0);
+          return;
+        }
 
-        let label = "Levegő: nincs adat";
-        let icon = "🌬️";
+        airGaugeShell.classList.remove("state-none", "state-good", "state-medium", "state-bad");
+
+        let label = "Nincs adat";
         let cls = "state-none";
 
         if (norm === "jo") {
-          label = "Levegő: Jó";
-          icon = "🌿";
+          label = "Jó";
           cls = "state-good";
         } else if (norm === "kozepes") {
-          label = "Levegő: Közepes";
-          icon = "😐";
+          label = "Közepes";
           cls = "state-medium";
         } else if (norm === "rossz") {
-          label = "Levegő: Rossz";
-          icon = "⚠️";
+          label = "Rossz";
           cls = "state-bad";
         }
 
-        airPill.classList.add(cls);
-        airIcon.textContent = icon;
-        airText.textContent = label;
-
-        const parts = [];
-        if (Number.isFinite(details.aqi)) parts.push(`AQI: ${details.aqi}`);
-        if (Number.isFinite(details.tvoc)) parts.push(`TVOC: ${details.tvoc}`);
-        if (Number.isFinite(details.eco2)) parts.push(`eCO2: ${details.eco2}`);
-        airPill.title = parts.length ? parts.join(" | ") : label;
+        airGaugeShell.classList.add(cls);
+        airGaugeValue.textContent = label;
+        airAqiEl.textContent = `AQI: ${Number.isFinite(details.aqi) ? details.aqi : "—"}`;
+        airTvocEl.textContent = `TVOC: ${Number.isFinite(details.tvoc) ? details.tvoc : "—"}`;
+        airEco2El.textContent = `eCO2: ${Number.isFinite(details.eco2) ? details.eco2 : "—"}`;
+        setCardPage(currentCardPage);
       }
+
 
       function refreshPlanBadgeAndRestrictions() {
         if (planBadgeEl) {
@@ -877,7 +935,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 
       onValue(airStateRef, async (snap) => {
         if (!snap.exists()) {
-          airRow.style.display = "none";
+          currentAirState = "";
+          setAirVisual("", airDetails);
           return;
         }
 
