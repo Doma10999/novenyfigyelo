@@ -46,14 +46,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 
     const chartsBtn = document.getElementById("chartsBtn");
     const paymentBtn = document.getElementById("paymentBtn");
-    const aiBtn = document.getElementById("aiBtn");
     const menuBtn = document.getElementById("menuBtn");
     const chartsModal = document.getElementById("chartsModal");
     const chartsModalClose = document.getElementById("chartsModalClose");
 
     const chartsWrap = document.getElementById("chartsWrap");
 
-    const FLOATING_BUTTONS = [menuBtn, aiBtn, paymentBtn, chartsBtn, document.getElementById("notifBellBtn"), addAccountBtn];
+    const FLOATING_BUTTONS = [menuBtn, paymentBtn, chartsBtn, document.getElementById("notifBellBtn"), addAccountBtn];
 
     function setFloatingMenuVisibility(visible) {
       FLOATING_BUTTONS.forEach(btn => {
@@ -64,7 +63,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
         document.body.classList.remove("menu-open");
         if (menuBtn) menuBtn.innerHTML = '<i class="fa-solid fa-bars"></i>';
       }
-      updateAiButtonAccess();
     }
 
     // ====== Tárolás (fiókok) ======
@@ -128,16 +126,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
       return normalizePlan(entry.plan) === "plus";
     };
 
-    function updateAiButtonAccess() {
-      if (!aiBtn) return;
-      const activeUid = window.jelenlegiUID;
-      const canUseAi = !!(activeUid && window.__isPlusForUid(activeUid));
-      aiBtn.style.display = activeUid ? "flex" : "none";
-      aiBtn.classList.toggle("ai-locked", !canUseAi);
-      aiBtn.title = canUseAi ? "AI növénysegéd" : "AI növénysegéd (csak Plus csomagban)";
-      aiBtn.setAttribute("aria-disabled", canUseAi ? "false" : "true");
-    }
-
     function getPlanBadgeText(uid) {
       return window.__isPlusForUid(uid) ? "PLUS" : "FREE";
     }
@@ -147,7 +135,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
     }
 
     function emitPlanRefresh() {
-      updateAiButtonAccess();
       window.dispatchEvent(new CustomEvent("subscription-plan-updated"));
     }
 
@@ -227,8 +214,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
       for (const [key, v] of deviceCards.entries()) {
         if (key.endsWith("|" + deviceId)) v.card.classList.add("selected");
       }
-      updateAiButtonAccess();
-      window.dispatchEvent(new CustomEvent("selected-device-changed", { detail: { deviceId, uid: window.jelenlegiUID || null } }));
     }
 
     function showLoginScreen() {
@@ -242,7 +227,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
       setFloatingMenuVisibility(false);
       statusDiv.style.color = "#1b3a2a";
       statusDiv.textContent = "Nincs bejelentkezve";
-      updateAiButtonAccess();
     }
 
     function hideLoginScreen() {
@@ -254,7 +238,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
       addAccountBtn.style.display = "flex";
       chartsBtn.style.display = "flex";
       setFloatingMenuVisibility(true);
-      updateAiButtonAccess();
     }
 
     // ====== Grafikon rajzolás (client-side history) ======
@@ -300,6 +283,47 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
       obj.history = obj.history.filter(p => p.t >= fiveDaysAgo);
 
       obj.lastUpdated = now.getTime();
+    }
+
+    function formatLastDataChange(ts) {
+      if (!ts) return "";
+      const d = new Date(Number(ts));
+      if (Number.isNaN(d.getTime())) return "";
+
+      const now = new Date();
+      const sameDay =
+        d.getFullYear() === now.getFullYear() &&
+        d.getMonth() === now.getMonth() &&
+        d.getDate() === now.getDate();
+
+      return sameDay
+        ? d.toLocaleTimeString("hu-HU", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+        : d.toLocaleString("hu-HU", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit"
+          });
+    }
+
+    function upsertHistoryPoint(obj, value, timestamp) {
+      if (!obj) return false;
+      const entries = Array.isArray(obj.history) ? [...obj.history] : [];
+      const last = entries[entries.length - 1];
+      const numericValue = Number(value);
+      const ts = Number(timestamp || Date.now());
+
+      if (last && Number(last.v) === numericValue) {
+        obj.history = entries;
+        obj.lastUpdated = Number(last.t) || 0;
+        return false;
+      }
+
+      entries.push({ t: ts, v: numericValue });
+      obj.history = entries.slice(-7);
+      obj.lastUpdated = obj.history.at(-1)?.t || 0;
+      return true;
     }
 
     function drawSimpleLineChart(canvas, history) {
@@ -405,7 +429,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
         left.textContent = item.name || "Növény";
 
         const right = document.createElement("small");
-        right.textContent = item.lastUpdated ? new Date(item.lastUpdated).toLocaleTimeString() : "";
+        right.textContent = item.lastUpdated ? formatLastDataChange(item.lastUpdated) : "";
 
         title.appendChild(left);
         title.appendChild(right);
@@ -720,13 +744,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             try {
               const cacheKey = `plant_${uid}_${deviceId}`;
 
+              const cardObj = deviceCards.get(uid + "|" + deviceId);
               const cacheData = {
                 sensorValue: currPercent,
                 displayValue: displayPct,
                 category: currCat || "",
                 name: titleEl.textContent || "",
-                history: (deviceCards.get(uid + "|" + deviceId)?.history) || [],
-                lastUpdated: Date.now()
+                history: (cardObj?.history) || [],
+                lastUpdated: cardObj?.lastUpdated || 0
               };
 
               localStorage.setItem(cacheKey, JSON.stringify(cacheData));
@@ -745,23 +770,29 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
         entries = Object.entries(snapHist.val())
           .map(([t, val]) => ({ t: Number(t), v: Number(val) }))
           .filter(p => Number.isFinite(p.v))
-          .sort((a, b) => a.t - b.t);
+          .sort((a, b) => a.t - b.t)
+          .slice(-7);
       }
 
-      entries.push({ t: Date.now(), v: displayPct });
-      entries = entries.slice(-7);
+      const last = entries[entries.length - 1];
+      const valueChanged = !last || Number(last.v) !== Number(displayPct);
 
-      const newHistory = {};
-      for (const e of entries) {
-        newHistory[e.t] = e.v;
+      if (valueChanged) {
+        entries.push({ t: Date.now(), v: displayPct });
+        entries = entries.slice(-7);
+
+        const newHistory = {};
+        for (const e of entries) {
+          newHistory[e.t] = e.v;
+        }
+
+        await set(historyRef, newHistory);
       }
-
-      await set(historyRef, newHistory);
 
       const obj = deviceCards.get(uid + "|" + deviceId);
       if (obj) {
         obj.history = entries;
-        obj.lastUpdated = entries.at(-1)?.t || Date.now();
+        obj.lastUpdated = entries.at(-1)?.t || 0;
       }
     } else {
       const obj = deviceCards.get(uid + "|" + deviceId);
@@ -884,7 +915,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             const obj = deviceCards.get(key);
             if (obj) {
               obj.history = data.history;
-              obj.lastUpdated = data.lastUpdated || Date.now();
+              obj.lastUpdated = data.lastUpdated || 0;
             }
           }
         }
@@ -1080,8 +1111,3 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 
     // ====== Expose for push script ======
     window.__setSelectedDevice = setSelectedDevice;
-
-
-window.addEventListener("selected-device-changed", updateAiButtonAccess);
-window.addEventListener("subscription-plan-updated", updateAiButtonAccess);
-updateAiButtonAccess();

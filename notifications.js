@@ -177,7 +177,7 @@
       const addBtn = document.getElementById("addAccountBtn");
       const bell = document.getElementById("notifBellBtn");
       const charts = document.getElementById("chartsBtn");
-      const paymentBtn = document.getElementById("paymentBtn"); const aiBtn = document.getElementById("aiBtn");
+      const paymentBtn = document.getElementById("paymentBtn");
 
       function setMenuOpen(open) {
         document.body.classList.toggle("menu-open", !!open);
@@ -195,7 +195,7 @@
         });
 
         // ha rányomsz egy gombra, csukjuk vissza a menüt
-        [addBtn, bell, charts, paymentBtn, aiBtn].forEach(btn => {
+        [addBtn, bell, charts, paymentBtn].forEach(btn => {
           if (!btn) return;
           btn.addEventListener("click", () => setMenuOpen(false));
         });

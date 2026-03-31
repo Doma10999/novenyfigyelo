@@ -64,10 +64,6 @@
     <i class="fa-solid fa-money-bill-wave"></i>
   </button>
 
-  <button id="aiBtn" style="display:none;" aria-label="AI növénysegéd" title="AI növénysegéd">
-    <i class="fa-solid fa-robot"></i>
-  </button>
-
   <button id="menuBtn" style="display:none;" aria-label="Menü" title="Menü"><i class="fa-solid fa-bars"></i></button>
 
   <div id="notifModal">
@@ -109,7 +105,7 @@
       <span id="chartsModalClose">&times;</span>
       <h3 style="color:#0d3b23; margin-bottom:6px;">Grafikonok</h3>
       <p style="opacity:.75; font-size:13px; margin-bottom:10px;">
-        Csak megjelenítés — frissül, ahogy jönnek az adatok.
+        Az idő az utolsó adatváltozást mutatja.
       </p>
       <div class="charts-wrap" id="chartsWrap"></div>
     </div>
@@ -162,37 +158,6 @@
     </div>
   </div>
 
-  <div id="aiModal" style="display:none;">
-    <div id="aiModalContent">
-      <button id="aiModalClose" class="ai-close-btn" aria-label="Bezárás">×</button>
-      <div class="ai-header">
-        <div>
-          <h3>AI növénysegéd</h3>
-          <p>Csak növényes kérdésekre válaszol röviden.</p>
-        </div>
-        <div id="aiStatusPill">Készenlét</div>
-      </div>
-
-      <div id="aiMessages" class="ai-messages">
-        <div class="ai-msg ai-msg-bot">Szia! Írd meg például: „Van egy monstera növényem. Melyik kategória kell neki, mennyi fény és víz kell?”</div>
-      </div>
-
-      <div class="ai-quick-row">
-        <button class="ai-quick-btn" data-ai-prompt="Van egy monstera növényem. Melyik kategóriát válasszam hozzá az oldalon?">Monstera kategória</button>
-        <button class="ai-quick-btn" data-ai-prompt="A rosso növényemnek mennyi víz és mennyi fény kell?">Rosso fény és víz</button>
-      </div>
-
-      <form id="aiForm" class="ai-form">
-        <textarea id="aiInput" rows="3" placeholder="Pl.: Van egy fikuszom. Hová tegyem a lakásban, és mennyire vízigényes?"></textarea>
-        <div class="ai-actions">
-          <button type="button" id="aiClearBtn" class="ai-secondary-btn">Törlés</button>
-          <button type="submit" id="aiSendBtn" class="ai-primary-btn">Küldés</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <script type="module" src="ai-assistant.js"></script>
   <script src="plant-type-modal.js"></script>
 
 
