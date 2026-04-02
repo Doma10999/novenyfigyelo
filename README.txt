@@ -1,17 +1,6 @@
-Fájlok:
-- index.html
-- styles.css
+Ezeket a fájlokat töltsd fel a GitHub projekted gyökerébe, és írd felül a régieket:
 - firebase-app.js
-- notifications.js
-- service-worker-register.js
-- offline-status.js
-- plant-type-modal.js
+- styles.css
 
-Használat:
-1. Ezeket a fájlokat tedd ugyanabba a mappába.
-2. A meglévő manifest.json, service-worker.js, ikonok és egyéb fájlok maradjanak meg ugyanott.
-3. Az index.html már a külön fájlokra hivatkozik.
-
-Megjegyzés:
-- A működés logikája nem lett átírva, csak külön fájlokba lett szedve.
-- Éles használat előtt érdemes gyorsan letesztelni a bejelentkezést, grafikonokat, email értesítést és kategória-választást.
+Az index.html és a notifications.js csak azért vannak benne, hogy együtt lásd a jelenlegi állapotot.
+A grafikon javítás a firebase-app.js és a styles.css fájlban történt.

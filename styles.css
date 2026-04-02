@@ -312,52 +312,6 @@
 
 
 
-    .air-quality-row {
-      display: flex;
-      justify-content: center;
-      margin: 6px 0 10px;
-      position: relative;
-      z-index: 2;
-    }
-
-    .air-quality-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 14px;
-      border-radius: 16px;
-      font-weight: 700;
-      font-size: 14px;
-      box-shadow: 0 10px 20px rgba(0,0,0,0.06);
-      background: rgba(255,255,255,0.72);
-      color: #30523b;
-      border: 1px solid rgba(0,0,0,0.05);
-    }
-
-    .air-quality-icon { font-size: 16px; line-height: 1; }
-    .air-quality-text { line-height: 1; }
-
-    .air-quality-pill.state-good {
-      background: rgba(76, 175, 80, 0.15);
-      color: #1b5e20;
-      border-color: rgba(76,175,80,0.18);
-    }
-    .air-quality-pill.state-medium {
-      background: rgba(255, 193, 7, 0.16);
-      color: #8a6400;
-      border-color: rgba(255,193,7,0.2);
-    }
-    .air-quality-pill.state-bad {
-      background: rgba(244, 67, 54, 0.14);
-      color: #b71c1c;
-      border-color: rgba(244,67,54,0.2);
-    }
-    .air-quality-pill.state-none {
-      background: rgba(96, 125, 139, 0.12);
-      color: #455a64;
-      border-color: rgba(96,125,139,0.16);
-    }
-
     .slider-container { margin-top: 8px; position: relative; z-index: 2; }
     .led-slider {
       width: 92%; margin: 12px auto 6px; display: block;
@@ -533,11 +487,12 @@
       opacity: 0.7;
       font-size: 12px;
       white-space: nowrap;
+      text-align: right;
     }
 
     canvas {
       width: 100%;
-      height: 160px;
+      height: 180px;
       background: #ffffff;
       border-radius: 18px;
       box-shadow: inset 0 0 0 1px rgba(0,0,0,0.04);
@@ -558,6 +513,12 @@
       #addAccountBtn { font-size: 30px; }
       #chartsBtn { font-size: 20px; }
       #notifBellBtn { font-size: 20px; }
+      #chartsModalContent { padding: 22px 12px 18px; }
+      .charts-wrap { max-height: 72vh; padding: 8px 2px 0; }
+      .chart-card { padding: 12px 10px 10px; border-radius: 18px; }
+      .chart-title { align-items: flex-start; flex-direction: column; gap: 4px; }
+      .chart-title small { white-space: normal; text-align: left; font-size: 11px; }
+      canvas { height: 190px; }
     }
 
     .plant-select {
@@ -1109,156 +1070,3 @@
         width: 100%;
       }
     }
-
-/* ============================= */
-/* TALAJ / LEVEGŐ LAPOZHATÓ KÁRTYA */
-/* ============================= */
-.card-pages-viewport {
-  position: relative;
-  overflow: hidden;
-  width: 100%;
-  min-height: 280px;
-  touch-action: pan-y;
-}
-
-.card-pages-track {
-  display: flex;
-  width: 200%;
-  transition: transform 0.35s ease;
-  will-change: transform;
-}
-
-.card-page {
-  width: 50%;
-  flex: 0 0 50%;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-}
-
-.page-air {
-  display: none;
-  align-items: center;
-}
-
-.air-slide-wrap {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 250px;
-}
-
-.air-gauge-shell {
-  width: 180px;
-  height: 180px;
-  border-radius: 50%;
-  padding: 16px;
-  background: conic-gradient(#c8e6c9 0 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 12px auto 10px;
-  transition: background 0.35s ease;
-}
-
-.air-gauge-shell.state-good {
-  background: conic-gradient(#3d78c8 0 100%);
-}
-
-.air-gauge-shell.state-medium {
-  background: conic-gradient(#f4a300 0 50%, #c8e6c9 50% 100%);
-}
-
-.air-gauge-shell.state-bad {
-  background: conic-gradient(#ef1717 0 25%, #c8e6c9 25% 100%);
-}
-
-.air-gauge-shell.state-none {
-  background: conic-gradient(#90a4ae 0 100%);
-}
-
-.air-gauge-core {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  background: rgba(255,255,255,0.94);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.03);
-}
-
-.air-gauge-label {
-  font-size: 16px;
-  color: #4f6b5f;
-  margin-bottom: 6px;
-}
-
-.air-gauge-value {
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1.1;
-}
-
-.air-gauge-shell.state-good .air-gauge-value,
-.air-gauge-shell.state-good .air-gauge-label { color: #3d78c8; }
-.air-gauge-shell.state-medium .air-gauge-value,
-.air-gauge-shell.state-medium .air-gauge-label { color: #e39400; }
-.air-gauge-shell.state-bad .air-gauge-value,
-.air-gauge-shell.state-bad .air-gauge-label { color: #ef1717; }
-.air-gauge-shell.state-none .air-gauge-value,
-.air-gauge-shell.state-none .air-gauge-label { color: #607d8b; }
-
-.air-metrics {
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-  flex-wrap: wrap;
-  margin-top: 2px;
-}
-
-.air-metric {
-  font-size: 12px;
-  font-weight: 700;
-  color: #546e62;
-  background: rgba(255,255,255,0.85);
-  padding: 6px 8px;
-  border-radius: 12px;
-  box-shadow: 0 8px 18px rgba(0,0,0,0.05);
-}
-
-.card-dots {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 8px;
-  position: relative;
-  z-index: 3;
-}
-
-.card-dot {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 2px solid rgba(27,58,42,0.35);
-  background: rgba(255,255,255,0.75);
-  padding: 0;
-  margin: 0;
-  box-shadow: none;
-}
-
-.card-dot.is-active {
-  background: rgba(27,58,42,0.55);
-}
-
-@media (max-width: 480px) {
-  .card-pages-viewport { min-height: 240px; }
-  .air-gauge-shell { width: 150px; height: 150px; }
-  .air-gauge-label { font-size: 14px; }
-  .air-gauge-value { font-size: 20px; }
-}
