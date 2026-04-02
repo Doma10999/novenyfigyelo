@@ -386,7 +386,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
     const data = normalizeHistoryEntries(history).slice(-7);
     const MAX_BARS = 7;
     const paddingTop = 22;
-    const paddingBottom = 44;
+    const paddingBottom = 28;
     const paddingX = 18;
     const gap = 16;
 
@@ -427,11 +427,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
         ctx.fillStyle = color;
         ctx.font = "900 16px Roboto";
         ctx.textAlign = "center";
-        ctx.fillText(`${value}%`, x + barWidth / 2, h - 22);
-
-        ctx.fillStyle = "rgba(13,59,35,0.65)";
-        ctx.font = "11px Roboto";
-        ctx.fillText(formatChartTimestamp(p.t), x + barWidth / 2, h - 6);
+        // FONTOS: itt szándékosan CSAK a százalék jelenik meg az oszlop alatt.
+        // Dátum/idő NEM rajzolódhat a canvasra, az csak jobb felül látszódjon.
+        ctx.fillText(`${value}%`, x + barWidth / 2, h - 10);
       });
 
       if (animProgress < 1) {
