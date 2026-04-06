@@ -1070,3 +1070,73 @@
         width: 100%;
       }
     }
+
+
+/* ===== Air quality card ===== */
+.air-quality-card {
+  margin: 14px 0 0;
+  padding: 14px 14px 12px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(240,247,243,0.95), rgba(232,243,237,0.95));
+  box-shadow: inset 0 0 0 1px rgba(13,59,35,0.06);
+  text-align: left;
+}
+.air-quality-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-weight: 800;
+  color: #0d3b23;
+}
+.air-quality-header i {
+  margin-right: 6px;
+}
+.air-quality-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 88px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+}
+.air-tone-excellent { background: rgba(102, 187, 106, 0.16); color: #1b5e20; }
+.air-tone-good { background: rgba(129, 199, 132, 0.18); color: #2e7d32; }
+.air-tone-mid { background: rgba(255, 167, 38, 0.18); color: #ef6c00; }
+.air-tone-bad { background: rgba(239, 83, 80, 0.16); color: #c62828; }
+.air-tone-very-bad { background: rgba(183, 28, 28, 0.15); color: #8e0000; }
+.air-tone-unknown { background: rgba(120, 144, 156, 0.16); color: #455a64; }
+.air-quality-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.air-metric {
+  padding: 10px 10px 9px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.8);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.04);
+}
+.air-metric span {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #6d8a78;
+  margin-bottom: 4px;
+}
+.air-metric strong {
+  display: block;
+  font-size: 14px;
+  color: #0d3b23;
+  word-break: break-word;
+}
+@media (max-width: 480px) {
+  .air-quality-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .air-quality-state { min-width: 0; }
+}

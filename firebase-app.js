@@ -251,6 +251,20 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
       return `${d.getFullYear()}.${pad2(d.getMonth() + 1)}.${pad2(d.getDate())}-${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
     }
 
+    function getChartDisplayTimestamp(item) {
+      return Number(item?.lastMeasurementAt || item?.lastUpdated || 0);
+    }
+
+    function getAirQualityVisual(status = "", bad = false) {
+      const normalized = String(status || "").toLowerCase();
+      if (normalized.includes("nagyon")) return { label: "Nagyon rossz", tone: "very-bad", icon: "fa-smog" };
+      if (normalized.includes("rossz") || bad) return { label: "Rossz", tone: "bad", icon: "fa-wind" };
+      if (normalized.includes("kozepes")) return { label: "Közepes", tone: "mid", icon: "fa-cloud" };
+      if (normalized.includes("jo")) return { label: "Jó", tone: "good", icon: "fa-leaf" };
+      if (normalized.includes("kivalo")) return { label: "Kiváló", tone: "excellent", icon: "fa-seedling" };
+      return { label: "Nincs adat", tone: "unknown", icon: "fa-circle-question" };
+    }
+
     function normalizeHistoryEntries(entries) {
       if (!Array.isArray(entries)) return [];
       const sorted = entries
@@ -313,6 +327,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
       if (lastEntry && Number(lastEntry.v) === Number(displayPct)) {
         obj.history = currentEntries;
         obj.lastUpdated = lastEntry.t || 0;
+        obj.lastMeasurementAt = Number(changeTimestamp) > 0 ? Number(changeTimestamp) : Date.now();
         return;
       }
 
@@ -452,7 +467,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
           return window.__isPlusForUid(uid);
         })
         .map(([key, obj]) => ({ key, ...obj }));
-      items.sort((a,b)=> (b.lastUpdated||0) - (a.lastUpdated||0));
+      items.sort((a,b)=> getChartDisplayTimestamp(b) - getChartDisplayTimestamp(a));
 
       for (const item of items) {
         const chartCard = document.createElement("div");
@@ -465,7 +480,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
         left.textContent = item.name || "Növény";
 
         const right = document.createElement("small");
-        right.textContent = formatChartTimestamp(item.lastUpdated);
+        right.textContent = formatChartTimestamp(getChartDisplayTimestamp(item));
 
         title.appendChild(left);
         title.appendChild(right);
@@ -571,6 +586,18 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
           <div class="slider-labels"><span>Fény erő</span></div>
         </div>
 
+        <div class="air-quality-card" style="display:none;">
+          <div class="air-quality-header">
+            <span><i class="fa-solid fa-wind"></i> Levegő minőség</span>
+            <span class="air-quality-state air-tone-unknown">Nincs adat</span>
+          </div>
+          <div class="air-quality-metrics">
+            <div class="air-metric"><span>AQI</span><strong class="air-aqi">—</strong></div>
+            <div class="air-metric"><span>TVOC</span><strong class="air-tvoc">—</strong></div>
+            <div class="air-metric"><span>eCO2</span><strong class="air-eco2">—</strong></div>
+          </div>
+        </div>
+
         <div style="margin-top:16px; position:relative; z-index:2;">
           <div class="plant-select" data-uid="${uid}" data-device="${deviceId}">
             <span class="plant-select-value">Válassz kategóriát</span>
@@ -596,6 +623,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
       const gaugeCircleEl = card.querySelector(".gauge-fill");
       const sliderContainer = card.querySelector(".slider-container");
       const slider = card.querySelector(".led-slider");
+      const airCard = card.querySelector(".air-quality-card");
+      const airStateEl = card.querySelector(".air-quality-state");
+      const airAqiEl = card.querySelector(".air-aqi");
+      const airTvocEl = card.querySelector(".air-tvoc");
+      const airEco2El = card.querySelector(".air-eco2");
 
       const batteryBox = card.querySelector(".battery-box");
       const batteryImg = card.querySelector(".battery-icon");
@@ -620,7 +652,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
         name: email,
         history: [],
         lastUpdated: 0,
-        deviceMetaTimestamp: 0
+        lastMeasurementAt: 0,
+        deviceMetaTimestamp: 0,
+        airData: null
       });
 
       const plantTypeRef = ref(db, `users/${uid}/devices/${deviceId}/plantType`);
@@ -689,6 +723,24 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
         gaugeCircleEl.style.stroke = color;
         gaugeValueEl.style.color = color;
         return display;
+      }
+
+      function updateAirUI(airData) {
+        const obj = deviceCards.get(key);
+        if (obj) obj.airData = airData || null;
+
+        if (!airData || !airCard || !airStateEl || !airAqiEl || !airTvocEl || !airEco2El) {
+          if (airCard) airCard.style.display = "none";
+          return;
+        }
+
+        airCard.style.display = "block";
+        const visual = getAirQualityVisual(airData.status, airData.bad);
+        airStateEl.textContent = visual.label;
+        airStateEl.className = `air-quality-state air-tone-${visual.tone}`;
+        airAqiEl.textContent = Number.isFinite(Number(airData.aqi)) ? String(Number(airData.aqi)) : "—";
+        airTvocEl.textContent = Number.isFinite(Number(airData.tvoc)) ? `${Number(airData.tvoc)} ppb` : "—";
+        airEco2El.textContent = Number.isFinite(Number(airData.eco2)) ? `${Number(airData.eco2)} ppm` : "—";
       }
 
 
@@ -781,7 +833,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
         if (!snap.exists()) return;
         const obj = deviceCards.get(key);
         if (!obj) return;
-        obj.deviceMetaTimestamp = extractDeviceChangeTimestamp(snap.val());
+        obj.deviceMetaTimestamp = extractDeviceChangeTimestamp(snap.val()) || Date.now();
       });
 
      // Firebase: soil sensor + EMAIL riasztás
@@ -798,13 +850,16 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             try {
               const cacheKey = `plant_${uid}_${deviceId}`;
 
+              const cacheObj = deviceCards.get(uid + "|" + deviceId);
               const cacheData = {
                 sensorValue: currPercent,
                 displayValue: displayPct,
                 category: currCat || "",
                 name: titleEl.textContent || "",
-                history: (deviceCards.get(uid + "|" + deviceId)?.history) || [],
-                lastUpdated: deviceCards.get(uid + "|" + deviceId)?.lastUpdated || 0
+                history: cacheObj?.history || [],
+                lastUpdated: cacheObj?.lastUpdated || 0,
+                lastMeasurementAt: cacheObj?.lastMeasurementAt || 0,
+                airData: cacheObj?.airData || null
               };
 
               localStorage.setItem(cacheKey, JSON.stringify(cacheData));
@@ -814,14 +869,20 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 
 
             const obj = deviceCards.get(uid + "|" + deviceId);
-            const changeTimestamp = obj?.deviceMetaTimestamp || 0;
+            const measurementTimestamp = obj?.deviceMetaTimestamp || Date.now();
+
+            if (obj) {
+              obj.lastMeasurementAt = measurementTimestamp;
+            }
 
             if (window.__isPlusForUid(uid)) {
-              await appendHistoryIfChanged(uid, deviceId, displayPct, changeTimestamp);
+              await appendHistoryIfChanged(uid, deviceId, displayPct, measurementTimestamp);
             } else if (obj) {
               obj.history = [];
               obj.lastUpdated = 0;
             }
+
+            if (chartsModal.style.display === "flex") rebuildChartsModal();
 
 
         //if (window.__maybeEmailNotify) {
@@ -833,6 +894,35 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
           //plantType: currCat,
           //displayName: titleEl.textContent });
         //}
+      });
+
+      const airQualityRef = ref(db, `users/${uid}/devices/${deviceId}/airQuality`);
+      onValue(airQualityRef, (snap) => {
+        if (!snap.exists()) {
+          updateAirUI(null);
+          return;
+        }
+
+        const raw = snap.val() || {};
+        const airData = {
+          aqi: Number(raw.aqi),
+          tvoc: Number(raw.tvoc),
+          eco2: Number(raw.eco2),
+          bad: !!raw.bad,
+          status: String(raw.status || ""),
+          updatedAt: Number(raw.updatedAt || raw.measuredAt || raw.lastMeasurementAt || 0)
+        };
+        updateAirUI(airData);
+
+        try {
+          const cacheKey = `plant_${uid}_${deviceId}`;
+          const cached = localStorage.getItem(cacheKey);
+          const cacheData = cached ? JSON.parse(cached) : {};
+          cacheData.airData = airData;
+          localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+        } catch (e) {
+          console.warn("Offline air cache mentési hiba:", e);
+        }
       });
 // Firebase: LED (csak ha van)
       const ledLevelRef = ref(db, `users/${uid}/devices/${deviceId}/ledLevel`);
@@ -934,7 +1024,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             if (obj) {
               obj.history = data.history;
               obj.lastUpdated = data.lastUpdated || 0;
+              obj.lastMeasurementAt = data.lastMeasurementAt || data.lastUpdated || 0;
             }
+          }
+
+          if (data.airData) {
+            updateAirUI(data.airData);
           }
         }
       } catch (e) {
