@@ -265,6 +265,44 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
       return { label: "Nincs adat", tone: "unknown", icon: "fa-circle-question" };
     }
 
+    function getAirQualitySummary(visual, airData) {
+      const aqi = Number(airData?.aqi);
+      const tvoc = Number(airData?.tvoc);
+      const eco2 = Number(airData?.eco2);
+      switch (visual.tone) {
+        case "excellent":
+          return {
+            message: "A levegő most friss és rendben van.",
+            action: "Most nincs teendő."
+          };
+        case "good":
+          return {
+            message: "A levegő jó, a szoba most rendben van.",
+            action: "Szellőztetés most nem szükséges."
+          };
+        case "mid":
+          return {
+            message: "A levegő még elfogadható, de kezd romlani.",
+            action: "Ha teheted, hamarosan érdemes szellőztetni."
+          };
+        case "bad":
+          return {
+            message: "A levegő már nem ideális ebben a helyiségben.",
+            action: "Nyiss ablakot és szellőztess."
+          };
+        case "very-bad":
+          return {
+            message: "A levegő most kifejezetten rossz.",
+            action: "Szellőztess minél előbb."
+          };
+        default:
+          return {
+            message: "Nincs friss levegő adat.",
+            action: "Amint jön mérés, itt röviden látod majd, kell-e szellőztetni."
+          };
+      }
+    }
+
     function normalizeHistoryEntries(entries) {
       if (!Array.isArray(entries)) return [];
       const sorted = entries
@@ -591,11 +629,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             <span><i class="fa-solid fa-wind"></i> Levegő minőség</span>
             <span class="air-quality-state air-tone-unknown">Nincs adat</span>
           </div>
-          <div class="air-quality-metrics">
-            <div class="air-metric"><span>AQI</span><strong class="air-aqi">—</strong></div>
-            <div class="air-metric"><span>TVOC</span><strong class="air-tvoc">—</strong></div>
-            <div class="air-metric"><span>eCO2</span><strong class="air-eco2">—</strong></div>
-          </div>
+          <div class="air-quality-message">Nincs friss levegő adat.</div>
+          <div class="air-quality-action">Amint jön mérés, itt röviden látod majd, kell-e szellőztetni.</div>
+          <div class="air-quality-details">Részletek: AQI <span class="air-aqi">—</span> · TVOC <span class="air-tvoc">—</span> · eCO2 <span class="air-eco2">—</span></div>
         </div>
 
         <div style="margin-top:16px; position:relative; z-index:2;">
@@ -625,6 +661,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
       const slider = card.querySelector(".led-slider");
       const airCard = card.querySelector(".air-quality-card");
       const airStateEl = card.querySelector(".air-quality-state");
+      const airMessageEl = card.querySelector(".air-quality-message");
+      const airActionEl = card.querySelector(".air-quality-action");
+      const airDetailsEl = card.querySelector(".air-quality-details");
       const airAqiEl = card.querySelector(".air-aqi");
       const airTvocEl = card.querySelector(".air-tvoc");
       const airEco2El = card.querySelector(".air-eco2");
@@ -729,18 +768,32 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
         const obj = deviceCards.get(key);
         if (obj) obj.airData = airData || null;
 
-        if (!airData || !airCard || !airStateEl || !airAqiEl || !airTvocEl || !airEco2El) {
+        if (!airCard || !airStateEl || !airMessageEl || !airActionEl || !airDetailsEl || !airAqiEl || !airTvocEl || !airEco2El) {
           if (airCard) airCard.style.display = "none";
+          return;
+        }
+
+        if (!airData) {
+          airCard.style.display = "none";
           return;
         }
 
         airCard.style.display = "block";
         const visual = getAirQualityVisual(airData.status, airData.bad);
+        const summary = getAirQualitySummary(visual, airData);
         airStateEl.textContent = visual.label;
         airStateEl.className = `air-quality-state air-tone-${visual.tone}`;
-        airAqiEl.textContent = Number.isFinite(Number(airData.aqi)) ? String(Number(airData.aqi)) : "—";
-        airTvocEl.textContent = Number.isFinite(Number(airData.tvoc)) ? `${Number(airData.tvoc)} ppb` : "—";
-        airEco2El.textContent = Number.isFinite(Number(airData.eco2)) ? `${Number(airData.eco2)} ppm` : "—";
+        airMessageEl.textContent = summary.message;
+        airActionEl.textContent = summary.action;
+
+        const aqiText = Number.isFinite(Number(airData.aqi)) ? String(Number(airData.aqi)) : "—";
+        const tvocText = Number.isFinite(Number(airData.tvoc)) ? `${Number(airData.tvoc)} ppb` : "—";
+        const eco2Text = Number.isFinite(Number(airData.eco2)) ? `${Number(airData.eco2)} ppm` : "—";
+
+        airAqiEl.textContent = aqiText;
+        airTvocEl.textContent = tvocText;
+        airEco2El.textContent = eco2Text;
+        airDetailsEl.innerHTML = `Részletek: AQI <span class="air-aqi">${aqiText}</span> · TVOC <span class="air-tvoc">${tvocText}</span> · eCO2 <span class="air-eco2">${eco2Text}</span>`;
       }
 
 

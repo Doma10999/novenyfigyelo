@@ -94,32 +94,40 @@ function getAirTone_(status, bad) {
 
 function buildAirEmailHtml_(payload) {
   const state = getAirTone_(payload.airState, payload.bad);
-  const badgeBg = payload.bad ? '#fee2e2' : '#dcfce7';
-  const badgeColor = payload.bad ? '#b91c1c' : '#166534';
+  const isBad = !!payload.bad;
+  const badgeBg = isBad ? '#fee2e2' : '#dcfce7';
+  const badgeColor = isBad ? '#b91c1c' : '#166534';
+  const mainMessage = isBad
+    ? 'A szenzor szerint most érdemes szellőztetni a helyiségben.'
+    : 'A levegő jelenleg rendben van.';
+  const actionMessage = isBad
+    ? 'Nyiss ablakot vagy szellőztess néhány percig.'
+    : 'Most nincs teendő.';
   return `
   <div style="margin:0;padding:0;background:#eef6f0;font-family:Arial,sans-serif;color:#163524;">
     <div style="max-width:620px;margin:0 auto;padding:24px 14px;">
       <div style="background:linear-gradient(135deg,#ffffff 0%,#f5fbf6 100%);border-radius:26px;box-shadow:0 18px 40px rgba(0,0,0,0.08);overflow:hidden;">
         <div style="padding:26px 26px 14px;">
           <div style="font-size:30px;font-weight:800;color:#0d3b23;margin-bottom:8px;">Növényfigyelő 🌱</div>
-          <div style="display:inline-block;padding:8px 14px;border-radius:999px;background:${badgeBg};color:${badgeColor};font-weight:800;font-size:13px;">🌬️ Szellőztetés javasolt</div>
-          <h2 style="margin:18px 0 10px;font-size:24px;line-height:1.3;color:#0f2f21;">Rossz lett a levegő minősége</h2>
-          <p style="margin:0 0 18px;color:#456556;font-size:15px;line-height:1.6;">Érdemes ablakot nyitni vagy átszellőztetni a helyiséget, mert a szenzor szerint a levegő már nem ideális.</p>
+          <div style="display:inline-block;padding:8px 14px;border-radius:999px;background:${badgeBg};color:${badgeColor};font-weight:800;font-size:13px;">🌬️ Levegő minőség: ${state}</div>
+          <h2 style="margin:18px 0 10px;font-size:24px;line-height:1.3;color:#0f2f21;">${mainMessage}</h2>
+          <p style="margin:0 0 18px;color:#456556;font-size:15px;line-height:1.6;">${actionMessage}</p>
           <div style="background:#f1f7f3;border-radius:20px;padding:16px 16px 8px;margin-bottom:18px;">
-            <div style="font-weight:800;color:#0d3b23;margin-bottom:10px;">Eszköz adatai</div>
+            <div style="font-weight:800;color:#0d3b23;margin-bottom:10px;">Gyors összefoglaló</div>
             <div style="font-size:14px;line-height:1.9;color:#234734;">
               <div><b>Növény:</b> ${payload.plantName || '—'}</div>
               <div><b>Eszköz:</b> ${payload.deviceId || '—'}</div>
               <div><b>Kategória:</b> ${payload.category || '—'}</div>
-              <div><b>Állapot:</b> ${state}</div>
+              <div><b>Minősítés:</b> ${state}</div>
             </div>
           </div>
+          <div style="font-size:12px;color:#6a8675;font-weight:700;margin-bottom:8px;">Részletek</div>
           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;">
             <div style="flex:1;min-width:120px;background:#ffffff;border-radius:18px;padding:14px 12px;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.05);"><div style="font-size:12px;color:#6a8675;font-weight:700;margin-bottom:6px;">AQI</div><div style="font-size:24px;font-weight:800;color:#0d3b23;">${payload.aqi ?? '—'}</div></div>
             <div style="flex:1;min-width:120px;background:#ffffff;border-radius:18px;padding:14px 12px;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.05);"><div style="font-size:12px;color:#6a8675;font-weight:700;margin-bottom:6px;">TVOC</div><div style="font-size:24px;font-weight:800;color:#0d3b23;">${payload.tvoc ?? '—'} <span style="font-size:12px;font-weight:700;">ppb</span></div></div>
             <div style="flex:1;min-width:120px;background:#ffffff;border-radius:18px;padding:14px 12px;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.05);"><div style="font-size:12px;color:#6a8675;font-weight:700;margin-bottom:6px;">eCO2</div><div style="font-size:24px;font-weight:800;color:#0d3b23;">${payload.eco2 ?? '—'} <span style="font-size:12px;font-weight:700;">ppm</span></div></div>
           </div>
-          <div style="font-size:12px;color:#6b7280;line-height:1.7;">Ezt az üzenetet a Növényfigyelő rendszer küldte automatikusan.</div>
+          <div style="font-size:12px;color:#6b7280;line-height:1.7;">Megjegyzés: az eCO2 becsült érték, nem labor pontosságú CO2 mérés. Ez az email gyakorlati jelzésként szolgál arra, hogy érdemes-e szellőztetni.</div>
         </div>
       </div>
     </div>
