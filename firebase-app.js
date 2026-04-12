@@ -839,7 +839,26 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
         if (!snap.exists()) return;
         const obj = deviceCards.get(key);
         if (!obj) return;
-        obj.deviceMetaTimestamp = extractDeviceChangeTimestamp(snap.val()) || 0;
+
+        const ts = extractDeviceChangeTimestamp(snap.val()) || 0;
+        obj.deviceMetaTimestamp = ts;
+
+        if (ts > 0) {
+          obj.lastMeasurementAt = ts;
+        }
+
+        try {
+          const cacheKey = `plant_${uid}_${deviceId}`;
+          const cached = localStorage.getItem(cacheKey);
+          const cacheData = cached ? JSON.parse(cached) : {};
+          cacheData.lastMeasurementAt = ts;
+          cacheData.lastUpdated = obj.lastUpdated || 0;
+          localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+        } catch (e) {
+          console.warn("Device timestamp cache mentési hiba:", e);
+        }
+
+        if (chartsModal.style.display === "flex") rebuildChartsModal();
       });
 
      // Firebase: soil sensor + EMAIL riasztás

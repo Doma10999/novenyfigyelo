@@ -14,8 +14,8 @@ const firebaseConfig = {
 };
 
 const STRIPE_LINKS = {
-  monthly: "https://buy.stripe.com/test_14AaEPdO1ek0grYdLr7g400",
-  yearly: "https://buy.stripe.com/test_cNi5kv8tH0tafnU36N7g401"
+  monthly: "https://buy.stripe.com/eVq14f2PP3R1bQq7Be0gw01",
+  yearly: "https://buy.stripe.com/cNibITfCBafp7AacVy0gw00"
 };
 
 const STORAGE_KEY = "storedAccounts_v2";
