@@ -2,30 +2,24 @@
 <html lang="hu">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Növényfigyelő</title>
+
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
-  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="styles.css?v=20260406v4">
+
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#43a047">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Növényfigyelő">
-  <link rel="apple-touch-icon" href="icon2.png">
 
-
-  <link rel="stylesheet" href="styles.css?v=20260406v4">
-
-  
+  <link rel="icon" type="image/png" href="/icon2.png">
+  <link rel="apple-touch-icon" href="/icon2.png">
 
   <script type="module" src="firebase-app.js?v=20260814-history10-v1"></script>
-
-  
-    <!-- Email értesítés (Google Apps Script Web App) -->
   <script src="notifications.js?v=20260406v4"></script>
-
-  
-
-
 </head>
 
 <body>
@@ -52,7 +46,7 @@
 
   <button id="addAccountBtn" style="display:none;" title="Fiók hozzáadása">+</button>
 
-  <button id="notifBellBtn" style="display:none;" aria-label="Email értesítés" title="Email értesítés">
+  <button id="notifBellBtn" style="display:none;" aria-label="Email és push értesítés" title="Értesítések">
     <i class="fa-solid fa-bell"></i>
   </button>
 
@@ -84,7 +78,6 @@
         </div>
       </div>
 
-
       <div style="margin-top:18px; display:flex; gap:10px; justify-content:center;">
         <button id="notifSave" style="background:linear-gradient(145deg,#43a047,#66bb6a);color:#fff;border:none;border-radius:12px;padding:10px 18px;font-size:16px;cursor:pointer;width:auto;">
           Mentés
@@ -100,7 +93,7 @@
     </div>
   </div>
 
-<div id="chartsModal">
+  <div id="chartsModal">
     <div id="chartsModalContent">
       <span id="chartsModalClose">&times;</span>
       <h3 style="color:#0d3b23; margin-bottom:6px;">Grafikonok</h3>
@@ -135,11 +128,6 @@
     </div>
   </div>
 
-  <script src="service-worker-register.js"></script>
-  <script src="push-client.js?v=20260809v1"></script>
-  <script src="offline-status.js"></script>
-
-
   <div id="plantTypeModal" style="display:none;">
     <div class="modal">
       <div class="modal-box">
@@ -148,7 +136,6 @@
         <p style="margin:8px 0 14px; font-size:13px; opacity:.7;">
           A kiválasztás hatással van a százalék értékelésre
         </p>
-
 
         <div class="plant-option" data-value="🌵Szárazkedvelő">🌵 Szárazkedvelő</div>
         <div class="plant-option" data-value="🌾Mérsékelten száraz">🌾 Mérsékelten száraz</div>
@@ -159,10 +146,9 @@
     </div>
   </div>
 
+  <script src="service-worker-register.js?v=20260814-push-final1"></script>
+  <script src="push-client.js?v=20260814-push-final1"></script>
+  <script src="offline-status.js"></script>
   <script src="plant-type-modal.js"></script>
-
-
-
-
 </body>
 </html>
