@@ -1,0 +1,320 @@
+/**
+ * Növényfigyelő – Web Push riasztások FINAL
+ *
+ * Külön Google Apps Script projektben is használható.
+ * Nem törli a többi projekt triggerét.
+ *
+ * Script Properties szükséges:
+ * FIREBASE_DB_URL
+ * FIREBASE_PROJECT_ID
+ * FIREBASE_CLIENT_EMAIL
+ * FIREBASE_PRIVATE_KEY
+ * PUSH_WORKER_URL
+ * PUSH_API_SECRET
+ *
+ * Opcionális teszthez:
+ * PUSH_TEST_UID
+ */
+
+const PUSH_CHECK_INTERVAL_MIN = 5;
+const PUSH_SOIL_THRESHOLD = 35;
+const PUSH_BATTERY_LOW = 25;
+const PUSH_BATTERY_CRITICAL = 10;
+const PUSH_BATTERY_REARM = 40;
+const PUSH_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+const PUSH_FRESH_MS = 12 * 60 * 60 * 1000;
+
+function pushCfg_() {
+  const p = PropertiesService.getScriptProperties();
+  return {
+    dbUrl: String(p.getProperty('FIREBASE_DB_URL') || '').replace(/\/+$/, ''),
+    projectId: String(p.getProperty('FIREBASE_PROJECT_ID') || ''),
+    clientEmail: String(p.getProperty('FIREBASE_CLIENT_EMAIL') || ''),
+    privateKey: String(p.getProperty('FIREBASE_PRIVATE_KEY') || '').replace(/\\n/g, '\n'),
+    workerUrl: String(p.getProperty('PUSH_WORKER_URL') || '').replace(/\/+$/, ''),
+    pushSecret: String(p.getProperty('PUSH_API_SECRET') || ''),
+    testUid: String(p.getProperty('PUSH_TEST_UID') || '').trim()
+  };
+}
+
+function pushAccessToken_() {
+  const cfg = pushCfg_();
+  if (!cfg.projectId || !cfg.clientEmail || !cfg.privateKey) {
+    throw new Error('Hiányzó Firebase service account Script Property.');
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const header = Utilities.base64EncodeWebSafe(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const claim = Utilities.base64EncodeWebSafe(JSON.stringify({
+    iss: cfg.clientEmail,
+    scope: 'https://www.googleapis.com/auth/firebase.database https://www.googleapis.com/auth/userinfo.email',
+    aud: 'https://oauth2.googleapis.com/token',
+    exp: now + 3600,
+    iat: now
+  }));
+
+  const signature = Utilities.base64EncodeWebSafe(
+    Utilities.computeRsaSha256Signature(`${header}.${claim}`, cfg.privateKey)
+  );
+
+  const jwt = `${header}.${claim}.${signature}`;
+  const response = UrlFetchApp.fetch('https://oauth2.googleapis.com/token', {
+    method: 'post',
+    payload: {
+      grant_type: 'urn:ietf:params:oauth-grant-type:jwt-bearer',
+      assertion: jwt
+    },
+    muteHttpExceptions: true
+  });
+
+  const data = JSON.parse(response.getContentText() || '{}');
+  if (!data.access_token) {
+    // Helyes grant_type-tal újrapróbáljuk. Ez a blokk kompatibilitási védelem.
+    const retry = UrlFetchApp.fetch('https://oauth2.googleapis.com/token', {
+      method: 'post',
+      payload: {
+        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+        assertion: jwt
+      },
+      muteHttpExceptions: true
+    });
+    const retryData = JSON.parse(retry.getContentText() || '{}');
+    if (!retryData.access_token) throw new Error('Firebase access token hiba: ' + retry.getContentText());
+    return retryData.access_token;
+  }
+
+  return data.access_token;
+}
+
+function pushFirebaseGet_(path, token) {
+  const cfg = pushCfg_();
+  const response = UrlFetchApp.fetch(`${cfg.dbUrl}/${path}.json`, {
+    method: 'get',
+    headers: { Authorization: `Bearer ${token}` },
+    muteHttpExceptions: true
+  });
+
+  if (response.getResponseCode() >= 300) {
+    throw new Error(`Firebase GET hiba (${response.getResponseCode()}): ${response.getContentText()}`);
+  }
+
+  return JSON.parse(response.getContentText() || 'null');
+}
+
+function pushFirebasePatch_(path, payload, token) {
+  const cfg = pushCfg_();
+  const response = UrlFetchApp.fetch(`${cfg.dbUrl}/${path}.json`, {
+    method: 'patch',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload),
+    headers: { Authorization: `Bearer ${token}` },
+    muteHttpExceptions: true
+  });
+
+  if (response.getResponseCode() >= 300) {
+    throw new Error(`Firebase PATCH hiba (${response.getResponseCode()}): ${response.getContentText()}`);
+  }
+}
+
+function hasActivePlusPush_(subscription) {
+  const s = subscription || {};
+  const plan = String(s.plan || 'free').trim().toLowerCase();
+  const status = String(s.status || 'inactive').trim().toLowerCase();
+  let expiresAt = Number(s.expiresAt || 0);
+
+  if (expiresAt > 0 && expiresAt < 100000000000) expiresAt *= 1000;
+
+  const inactive = [
+    'free', 'inactive', 'canceled', 'cancelled', 'expired',
+    'incomplete', 'incomplete_expired', 'unpaid', 'paused'
+  ];
+
+  return plan === 'plus' &&
+    inactive.indexOf(status) === -1 &&
+    !(expiresAt > 0 && expiresAt <= Date.now());
+}
+
+function sendWebPush_(uid, title, body, type, tag) {
+  const cfg = pushCfg_();
+  if (!cfg.workerUrl || !cfg.pushSecret) {
+    throw new Error('Hiányzik a PUSH_WORKER_URL vagy PUSH_API_SECRET Script Property.');
+  }
+
+  const response = UrlFetchApp.fetch(`${cfg.workerUrl}/send`, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'X-Push-Secret': cfg.pushSecret },
+    payload: JSON.stringify({
+      uid: String(uid),
+      title: String(title || 'Növényfigyelő'),
+      body: String(body || ''),
+      type: String(type || 'general'),
+      tag: String(tag || 'novenyfigyelo'),
+      url: 'https://noveny-figyelo.netlify.app/'
+    }),
+    muteHttpExceptions: true
+  });
+
+  const code = response.getResponseCode();
+  const text = response.getContentText() || '{}';
+
+  if (code >= 300) {
+    throw new Error(`Push Worker hiba (${code}): ${text}`);
+  }
+
+  return JSON.parse(text);
+}
+
+function pushPlantName_(device, deviceId) {
+  return String(device.displayName || device.plantName || 'Növény').trim() || 'Növény';
+}
+
+function pushAirIsBad_(air) {
+  const a = air || {};
+  if (a.bad === true) return true;
+  const status = String(a.status || '').toLowerCase();
+  return status.indexOf('rossz') !== -1 || status.indexOf('nagyon') !== -1;
+}
+
+function checkPushAlerts() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) return;
+
+  try {
+    const token = pushAccessToken_();
+    const users = pushFirebaseGet_('users', token) || {};
+    const now = Date.now();
+
+    Object.keys(users).forEach((uid) => {
+      const user = users[uid] || {};
+      if (!hasActivePlusPush_(user.subscription)) return;
+
+      const devices = user.devices || {};
+
+      Object.keys(devices).forEach((deviceId) => {
+        const device = devices[deviceId] || {};
+
+        // Ugyanaz a növény-kijelölés szabályozza az emailt és a push riasztást.
+        if (!device.emailNotifEnabled) return;
+
+        const patch = {};
+        const plantName = pushPlantName_(device, deviceId);
+        const lastMeasurementAt = Number(device.lastMeasurementAt || device.lastSeen || 0);
+        const fresh = lastMeasurementAt > 0 && now - lastMeasurementAt <= PUSH_FRESH_MS;
+
+        // 1) Talajnedvesség
+        const soil = Number(
+          typeof device.sensorValue !== 'undefined' ? device.sensorValue : device.soil
+        );
+        const lastSoilPush = Number(device.lastSoilPushAt || 0);
+
+        if (
+          fresh && Number.isFinite(soil) && soil <= PUSH_SOIL_THRESHOLD &&
+          now - lastSoilPush >= PUSH_COOLDOWN_MS
+        ) {
+          const result = sendWebPush_(
+            uid,
+            '💧 Ideje meglocsolni!',
+            `${plantName} nedvessége ${Math.round(soil)}%-ra csökkent.`,
+            'soil_low',
+            `soil_${deviceId}`
+          );
+
+          if (Number(result.sent || 0) > 0) patch.lastSoilPushAt = now;
+        }
+
+        // 2) Akkumulátor
+        const battery = Number(
+          typeof device.batteryPercent !== 'undefined' ? device.batteryPercent : device.battery
+        );
+        const batteryArmed = device.pushBatteryArmed !== false;
+
+        if (Number.isFinite(battery)) {
+          if (battery >= PUSH_BATTERY_REARM) {
+            patch.pushBatteryArmed = true;
+          } else if (fresh && battery <= PUSH_BATTERY_LOW && batteryArmed) {
+            const critical = battery <= PUSH_BATTERY_CRITICAL;
+            const result = sendWebPush_(
+              uid,
+              critical ? '🪫 Kritikus akkumulátor' : '🔋 Alacsony akkumulátor',
+              `${plantName} eszközének töltöttsége ${Math.max(0, Math.round(battery))}%.`,
+              critical ? 'battery_critical' : 'battery_low',
+              `battery_${deviceId}`
+            );
+
+            if (Number(result.sent || 0) > 0) {
+              patch.lastBatteryPushAt = now;
+              patch.pushBatteryArmed = false;
+            }
+          }
+        }
+
+        // 3) Levegőminőség
+        const air = device.airQuality || {};
+        const lastAirPush = Number(device.lastAirPushAt || 0);
+
+        if (pushAirIsBad_(air) && now - lastAirPush >= PUSH_COOLDOWN_MS) {
+          const result = sendWebPush_(
+            uid,
+            '🌬️ Szellőztetés javasolt',
+            `${plantName} környezetében romlott a levegő minősége.`,
+            'air_bad',
+            `air_${deviceId}`
+          );
+
+          if (Number(result.sent || 0) > 0) patch.lastAirPushAt = now;
+        }
+
+        if (Object.keys(patch).length) {
+          pushFirebasePatch_(`users/${uid}/devices/${deviceId}`, patch, token);
+        }
+      });
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function setupPushAlertSystem() {
+  const cfg = pushCfg_();
+  const required = [
+    ['FIREBASE_DB_URL', cfg.dbUrl],
+    ['FIREBASE_PROJECT_ID', cfg.projectId],
+    ['FIREBASE_CLIENT_EMAIL', cfg.clientEmail],
+    ['FIREBASE_PRIVATE_KEY', cfg.privateKey],
+    ['PUSH_WORKER_URL', cfg.workerUrl],
+    ['PUSH_API_SECRET', cfg.pushSecret]
+  ];
+
+  required.forEach(([name, value]) => {
+    if (!value) throw new Error(`Hiányzó Script Property: ${name}`);
+  });
+
+  ScriptApp.getProjectTriggers().forEach((trigger) => {
+    if (trigger.getHandlerFunction() === 'checkPushAlerts') {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+
+  ScriptApp.newTrigger('checkPushAlerts')
+    .timeBased()
+    .everyMinutes(PUSH_CHECK_INTERVAL_MIN)
+    .create();
+
+  Logger.log('Push rendszer beállítva: 5 percenkénti ellenőrzés aktív.');
+}
+
+function sendTestPush() {
+  const cfg = pushCfg_();
+  if (!cfg.testUid) throw new Error('Állítsd be a PUSH_TEST_UID Script Property-t.');
+
+  const result = sendWebPush_(
+    cfg.testUid,
+    '🌱 Növényfigyelő teszt',
+    'A Web Push rendszer sikeresen működik ezen az eszközön.',
+    'test',
+    'novenyfigyelo_test'
+  );
+
+  Logger.log(JSON.stringify(result));
+}
